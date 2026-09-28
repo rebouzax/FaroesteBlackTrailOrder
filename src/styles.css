@@ -1,0 +1,59 @@
+:root {
+  font-family: 'Barlow Condensed', Impact, sans-serif;
+  color: #f1d7b5;
+  background: #1b120e;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  font-optical-sizing: auto;
+}
+
+* { box-sizing: border-box; }
+html, body, #game { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { background: #1b120e; }
+button { font: inherit; }
+.game-root { position: relative; width: 100%; height: 100%; isolation: isolate; background: linear-gradient(#281914, #160f0d); }
+.game-root canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.scene-shell { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.scene-label { position: absolute; top: 36px; left: clamp(24px, 5vw, 76px); display: grid; gap: 3px; text-shadow: 0 2px 6px #2c170e; }
+.eyebrow, .coords { font-size: 10px; font-weight: 700; letter-spacing: .28em; color: #e6b777; }
+.scene-label strong { font-size: 15px; letter-spacing: .12em; font-weight: 700; }
+.coords { color: #e0c1a0; opacity: .75; font-family: 'Special Elite', monospace; font-size: 9px; }
+.hud-top { position: absolute; top: 36px; right: clamp(24px, 5vw, 76px); display: flex; gap: 10px; }
+.hud-chip { padding: 9px 12px; border: 1px solid #f2d6b122; background: #271a16a8; backdrop-filter: blur(7px); color: #f3deca; font-size: 11px; letter-spacing: .13em; }
+.hud-chip b { color: #a77b58; padding: 0 6px; }
+.hud-dot { display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: #b7aa62; box-shadow: 0 0 9px #d5c36a; }
+.aim { position: absolute; top: 50%; left: 50%; width: 19px; height: 19px; transform: translate(-50%, -50%); opacity: .76; filter: drop-shadow(0 1px 2px #281a15); }
+.aim i { position: absolute; display: block; background: #fff0d7; }
+.aim i:nth-child(1), .aim i:nth-child(2) { width: 1px; height: 5px; left: 9px; }
+.aim i:nth-child(1) { top: 0; }.aim i:nth-child(2) { bottom: 0; }
+.aim i:nth-child(3), .aim i:nth-child(4) { width: 5px; height: 1px; top: 9px; }
+.aim i:nth-child(3) { left: 0; }.aim i:nth-child(4) { right: 0; }
+.aim b { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #f8e4ca; left: 8px; top: 8px; }
+.weapon-caption { position: absolute; bottom: 42px; right: clamp(24px, 5vw, 76px); color: #f3deca; font-size: 10px; letter-spacing: .2em; text-shadow: 0 2px 4px #140e0b; }
+.hud-bottom { position: absolute; bottom: 34px; left: clamp(24px, 5vw, 76px); right: clamp(24px, 5vw, 76px); display: flex; justify-content: space-between; color: #edd1b0; font-size: 10px; letter-spacing: .18em; text-shadow: 0 2px 5px #26170f; }
+.hud-bottom b { color: #edbb7f; font-weight: 600; }
+.location-mark { font-family: 'Special Elite', monospace; font-size: 11px; }
+.intro-card { position: absolute; z-index: 2; top: 50%; left: 50%; width: min(520px, calc(100vw - 44px)); padding: 42px 44px 26px; transform: translate(-50%, -48%); text-align: center; border: 1px solid #e5c59a3d; background: linear-gradient(145deg, #211613ed, #211613d9 54%, #392219e6); box-shadow: 0 25px 90px #120b09b8, inset 0 0 50px #d49c4412; backdrop-filter: blur(9px); transition: opacity .25s, transform .25s; pointer-events: auto; }
+.intro-card::before, .intro-card::after { position: absolute; content: ''; width: 14px; height: 14px; border-color: #d6a66d; opacity: .7; }
+.intro-card::before { left: 9px; top: 9px; border-top: 1px solid; border-left: 1px solid; }.intro-card::after { right: 9px; bottom: 9px; border-right: 1px solid; border-bottom: 1px solid; }
+.card-rule { display: flex; align-items: center; gap: 10px; justify-content: center; color: #d9aa75; font-size: 9px; letter-spacing: .28em; }
+.card-rule span { width: 26px; height: 1px; background: #d9aa75; opacity: .6; }
+h1 { margin: 19px 0 9px; font-size: clamp(34px, 7vw, 52px); line-height: .84; font-weight: 900; letter-spacing: .025em; color: #f1dfc9; text-shadow: 3px 3px 0 #5f3526; }
+h1 em { font-size: .58em; font-style: normal; letter-spacing: .12em; color: #d6a265; }
+.intro-card p { margin: 16px 0 22px; font-family: 'Special Elite', monospace; font-size: 12px; color: #c6ac93; }
+.enter-button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px 17px; border: 1px solid #dbad72; background: linear-gradient(90deg, #75452e, #9a6139); color: #fff1dc; font-size: 12px; letter-spacing: .2em; cursor: pointer; box-shadow: 0 5px 20px #160e0ca6; transition: filter .2s, transform .2s; }
+.enter-button:hover { filter: brightness(1.18); transform: translateY(-1px); }.enter-button b { font-size: 19px; font-weight: 400; }
+.card-controls { margin-top: 20px; display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 15px; color: #ad9984; font-size: 9px; letter-spacing: .1em; }
+kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-right: 2px; padding: 0 4px; border: 1px solid #b7997966; background: #110d0c; color: #e6cfb2; font: 9px 'Barlow Condensed', sans-serif; }
+.is-hidden { opacity: 0; pointer-events: none; transform: translate(-50%, -44%); }
+.resume-button { position: absolute; left: 50%; top: 58%; z-index: 3; transform: translate(-50%, -50%); padding: 13px 18px; border: 1px solid #e0b57e; background: #291a14e8; color: #f3dfc5; font-size: 11px; letter-spacing: .2em; cursor: pointer; pointer-events: auto; }
+.resume-button[hidden] { display: none; }
+.load-toast { position: absolute; z-index: 5; left: 50%; bottom: 72px; padding: 7px 12px; transform: translateX(-50%); border: 1px solid #f1d5b128; background: #221813d9; color: #e7c49c; font-size: 10px; letter-spacing: .16em; transition: opacity .5s; }
+.vignette { position: absolute; inset: 0; z-index: 1; box-shadow: inset 0 0 100px 0 #21130f62; pointer-events: none; }
+@media (max-width: 640px) {
+  .scene-label { top: 18px; left: 18px; }.hud-top { top: 18px; right: 18px; gap: 5px; }.hud-chip { padding: 7px 8px; font-size: 9px; }
+  .intro-card { padding: 35px 22px 21px; }.intro-card p { font-size: 10px; }.card-controls { gap: 8px; font-size: 8px; }
+  .hud-bottom { left: 18px; right: 18px; bottom: 18px; font-size: 8px; }.location-mark { font-size: 9px; }.weapon-caption { right: 18px; bottom: 45px; }
+  .coords { font-size: 8px; }.vignette { box-shadow: inset 0 0 70px 0 #21130f62; }
+}
