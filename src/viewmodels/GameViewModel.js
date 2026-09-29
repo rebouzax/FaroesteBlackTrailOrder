@@ -186,10 +186,10 @@ export class GameViewModel {
     const forward = Number(this.keys.has('KeyW') || this.keys.has('ArrowUp')) - Number(this.keys.has('KeyS') || this.keys.has('ArrowDown')) + this.touchMove.forward;
     const strafe = Number(this.keys.has('KeyD') || this.keys.has('ArrowRight')) - Number(this.keys.has('KeyA') || this.keys.has('ArrowLeft')) + this.touchMove.strafe;
     if (!forward && !strafe) return;
-    const yaw = this.view.camera.rotation.y;
     const step = (5 + this.model.upgrades.speed * 0.5) * delta / Math.max(1, Math.hypot(forward, strafe));
-    const dx = (-Math.sin(yaw) * forward + Math.cos(yaw) * strafe) * step;
-    const dz = (-Math.cos(yaw) * forward - Math.sin(yaw) * strafe) * step;
+    const { forwardX, forwardZ, rightX, rightZ } = this.view.getPlanarFacing();
+    const dx = (forwardX * forward + rightX * strafe) * step;
+    const dz = (forwardZ * forward + rightZ * strafe) * step;
     const camera = this.view.camera;
     const blocked = (x, z) => Math.hypot(x, z) > LIMIT ||
       this.colliders.some((item) => Math.hypot(x - item.x, z - item.z) < item.radius + 0.48);
@@ -315,14 +315,14 @@ export class GameViewModel {
   }
 
   autoWhip() {
-    const camera = this.view.camera, yaw = camera.rotation.y;
-    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const camera = this.view.camera;
+    const { forwardX, forwardZ } = this.view.getPlanarFacing();
     let target = null, nearest = RANGE;
     for (const enemy of this.model.enemies) {
       const dx = enemy.x - camera.position.x, dz = enemy.z - camera.position.z;
       const distance = Math.hypot(dx, dz);
       if (distance >= nearest || distance < 0.001) continue;
-      if ((dx * fx + dz * fz) / distance <= -0.1) continue;
+      if ((dx * forwardX + dz * forwardZ) / distance <= 0) continue;
       target = enemy;
       nearest = distance;
     }
@@ -331,7 +331,6 @@ export class GameViewModel {
     whip.active = true;
     whip.elapsed = 0;
     whip.hitApplied = false;
-    whip.angle = Math.atan2(target.z - camera.position.z, target.x - camera.position.x);
     whip.cooldown = Math.max(0.4, 1.05 - this.model.upgrades.cooldown * 0.1);
     this.view.startWhip();
   }
@@ -341,11 +340,12 @@ export class GameViewModel {
     if (!whip.active || whip.hitApplied || whip.elapsed < 0.18) return;
     whip.hitApplied = true;
     const camera = this.view.camera;
+    const { forwardX, forwardZ } = this.view.getPlanarFacing();
     for (const enemy of [...this.model.enemies]) {
       const dx = enemy.x - camera.position.x, dz = enemy.z - camera.position.z;
       const distance = Math.hypot(dx, dz);
       if (distance > RANGE) continue;
-      if ((dx * Math.cos(whip.angle) + dz * Math.sin(whip.angle)) / Math.max(0.001, distance) <= -0.1) continue;
+      if ((dx * forwardX + dz * forwardZ) / Math.max(0.001, distance) <= 0) continue;
       enemy.hp -= Math.max(1, 10 + this.model.upgrades.damage * 5 - enemy.armor);
       this.view.hitEnemy(enemy.object);
       if (enemy.hp <= 0) this.killEnemy(enemy);

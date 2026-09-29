@@ -114,10 +114,12 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .game-root:not(.is-active) .xp-track { display: none; }
 .main-menu { justify-content: center; }
 .menu-art {
-  background: linear-gradient(90deg, #080d1b15 0%, #080d1b38 45%, #060b17aa 100%), var(--menu-image) center center / cover no-repeat;
+  background: #0b1428;
   animation: menu-breath 22s ease-in-out infinite alternate;
   transform-origin: 40% 50%;
 }
+.menu-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.menu-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #080d1b15 0%, #080d1b38 45%, #060b17aa 100%); pointer-events: none; }
 .menu-panel { width: min(660px, 47vw); margin: auto 3vw auto auto; padding: 0 16px 24px; border: 0; background: none; box-shadow: none; }
 .game-logo { display: block; width: 100%; height: auto; max-height: min(56vh, 500px); object-fit: contain; margin: 0 auto 24px; filter: drop-shadow(0 14px 18px #01040cdd); }
 .menu-panel nav { max-width: 370px; margin: 0 auto; gap: 12px; }

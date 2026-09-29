@@ -15,7 +15,9 @@ export class GameView {
     this.scene.background = new THREE.Color('#111d38');
     this.scene.fog = new THREE.FogExp2('#172640', 0.0028);
     this.camera = new THREE.PerspectiveCamera(76, 1, 0.08, 400);
+    this.camera.rotation.order = 'YXZ';
     this.camera.position.set(0, 1.68, 218);
+    this.planarFacing = new THREE.Vector3();
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -68,7 +70,7 @@ export class GameView {
       <div class="scene-shell">
         <div class="combat-hud" aria-live="polite"><span>VIDA <b class="health-value">100/100</b></span><span>MOEDAS <b class="coins-value">0</b></span></div>
         <section class="main-menu" aria-label="Menu principal">
-          <div class="menu-art" style="--menu-image: url('${BASE_URL}art/menu-black-trail.png')"></div>
+          <div class="menu-art"><img src="${BASE_URL}art/menu-black-trail.png" alt="" fetchpriority="high" /></div>
           <div class="menu-moon-glow"></div><div class="menu-wind"></div>
           <div class="menu-lantern menu-lantern-one"></div><div class="menu-lantern menu-lantern-two"></div>
           <div class="menu-zombie menu-zombie-one"></div><div class="menu-zombie menu-zombie-two"></div>
@@ -722,9 +724,9 @@ export class GameView {
     }
     this.whipTimer = Math.max(0, this.whipTimer - delta);
     const progress = 1 - this.whipTimer / 0.38;
-    const yaw = this.camera.rotation.y;
-    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const { forwardX, forwardZ, rightX, rightZ } = this.getPlanarFacing();
+    const forward = new THREE.Vector3(forwardX, 0, forwardZ);
+    const right = new THREE.Vector3(rightX, 0, rightZ);
     const origin = new THREE.Vector3(this.camera.position.x, this.camera.position.y - 0.38, this.camera.position.z).addScaledVector(right, 0.32);
     const points = [];
     for (let i = 0; i <= 24; i++) {
@@ -762,6 +764,15 @@ export class GameView {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
     this.psx.setSize(width, height);
+  }
+
+  getPlanarFacing() {
+    this.camera.getWorldDirection(this.planarFacing);
+    this.planarFacing.y = 0;
+    this.planarFacing.normalize();
+    const forwardX = this.planarFacing.x;
+    const forwardZ = this.planarFacing.z;
+    return { forwardX, forwardZ, rightX: -forwardZ, rightZ: forwardX };
   }
 
   update(delta, model) {
