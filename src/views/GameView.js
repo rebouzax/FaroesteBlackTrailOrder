@@ -1,3 +1,6 @@
+import { GameAudio } from '../services/GameAudio.js';
+import { AbilityEffectsView } from './AbilityEffectsView.js';
+import { ABILITIES, cardDescription, abilityMaxLevel } from '../config/abilityConfig.js';
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -5,6 +8,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { applyPSXMaterial } from '../vendor/threejs-psx-shader/src/PSXMaterial.js';
 import { PSXPipeline } from '../vendor/threejs-psx-shader/src/PSXPipeline.js';
+import { MenuView } from './MenuView.js';
 
 const BASE_URL = import.meta.env.BASE_URL;
 const MODEL_ROOT = `${BASE_URL}models/`;
@@ -23,16 +27,16 @@ export class GameView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
-    this.psx = new PSXPipeline(this.renderer, this.scene, this.camera, { resolutionHeight: 240 });
+    this.psx = new PSXPipeline(this.renderer, this.scene, this.camera, { resolutionHeight: window.matchMedia('(pointer: coarse)').matches ? 200 : 240 });
     this.psx.getEffect('fog').settings.color = '#172640';
     this.psx.getEffect('fog').settings.density = 0.0025;
     this.psx.getEffect('fog').settings.offset = 14;
-    this.psx.getEffect('dithering').settings.strength = 0.68;
+    this.psx.getEffect('dithering').settings.strength = 0.72;
     Object.assign(this.psx.getEffect('crt').settings, {
-      vignetteAmount: 0.5,
-      scanlineWeight: 0.045,
-      grainWeight: 0.018,
-      chromatic: 0.08,
+      vignetteAmount: 0.56,
+      scanlineWeight: 0.055,
+      grainWeight: 0.024,
+      chromatic: 0.1,
     });
     this.previousFrameTime = performance.now();
     this.loader = new GLTFLoader();
@@ -40,17 +44,27 @@ export class GameView {
     this.draco.setDecoderPath(`${BASE_URL}draco/`);
     this.loader.setDRACOLoader(this.draco);
     this.materials = new Map();
+    this.assetPromises = new Map();
     this.colliderSpecs = [];
     this.enemyTemplates = new Map();
     this.enemyActors = new Map();
     this.enemyLoadJobs = [];
     this.whipTimer = 0;
+    this.crackTimer = 0;
+    this.bossBarNodes = new Map();
+    this.whipAudio = new Audio(`${BASE_URL}art/whip.wav`);
+    this.whipAudio.volume = 0.38;
     this.endShown = false;
     this.world = new THREE.Group();
     this.scene.add(this.world);
     this.weapon = this.createWhipHand();
     this.camera.add(this.weapon);
     this.whipLine = this.createWhipLine();
+    this.crackEffect = this.createCrackEffect();
+    this.camera.add(this.crackEffect);
+    this.crackLight = new THREE.PointLight(0xffd7a3, 0, 7);
+    this.crackLight.position.set(0, 0, -2.4);
+    this.camera.add(this.crackLight);
     this.scene.add(this.camera);
     this.frame = this.frame.bind(this);
     this.buttons = null;
@@ -60,25 +74,36 @@ export class GameView {
     this.buildDunes();
     this.buildDust();
     this.buildCardinals();
+    this.audio = new GameAudio();
+    this.abilityEffects = new AbilityEffectsView(this.world);
+    this.revolver = this.createRevolver();
+    this.camera.add(this.revolver);
+    this.revolver.visible = false;
+    this.pistolEffect = this.createRevolver();
+    this.camera.add(this.pistolEffect);
+    this.pistolEffect.visible = false;
+    this.recoil = 0;
+    this.pistolFlash = 0;
     this.resize();
   }
 
   mount(viewModel) {
     this.viewModel = viewModel;
-    for (const collider of this.colliderSpecs) this.viewModel.addCollider(collider.x, collider.z, collider.radius);
+    for (const collider of this.colliderSpecs) {
+      if (collider.kind === 'box') this.viewModel.addBoxCollider(collider.minX, collider.maxX, collider.minZ, collider.maxZ);
+      else this.viewModel.addCollider(collider.x, collider.z, collider.radius);
+    }
     this.root.innerHTML = `
       <div class="scene-shell">
         <div class="combat-hud" aria-live="polite"><span>VIDA <b class="health-value">100/100</b></span><span>MOEDAS <b class="coins-value">0</b></span></div>
+        <div class="stage-timer" role="timer"><small>DESERTO DOS CONDENADOS</small><strong class="timer-value">15:00</strong><span class="timer-status"></span></div>
+        <div class="boss-bars" aria-label="Vida dos chefes"></div>
         <section class="main-menu" aria-label="Menu principal">
           <div class="menu-art"><img src="${BASE_URL}art/menu-black-trail.png" alt="" fetchpriority="high" /></div>
           <div class="menu-moon-glow"></div><div class="menu-wind"></div>
           <div class="menu-lantern menu-lantern-one"></div><div class="menu-lantern menu-lantern-two"></div>
           <div class="menu-zombie menu-zombie-one"></div><div class="menu-zombie menu-zombie-two"></div>
-          <div class="menu-panel">
-            <img class="game-logo" src="${BASE_URL}art/logo-black-trail-order.png" alt="Faroeste Black Trail Order: caveira de boi e trem negro" />
-            <nav aria-label="Opções do jogo"><button class="enter-button" type="button"><span>NOVA JORNADA</span><b>↗</b></button><button class="guide-button" type="button">COMO JOGAR <span>⌖</span></button></nav>
-            <p class="menu-guide" hidden><kbd>W</kbd> frente &nbsp; <kbd>S</kbd> trás &nbsp; <kbd>A</kbd> esquerda &nbsp; <kbd>D</kbd> direita<br>No celular ou tablet, gire o aparelho na horizontal, use o controle esquerdo para andar e arraste o lado direito para olhar. O chicote ataca sozinho quando há um inimigo à frente. Todos deixam experiência; alguns deixam moedas.</p>
-          </div>
+          <div class="menu-content"></div>
         </section>
         <button class="resume-button" type="button" hidden>${this.viewModel.touchDevice ? 'TOQUE PARA VOLTAR AO DESERTO' : 'CLIQUE PARA VOLTAR AO DESERTO'}</button>
         <div class="touch-controls" aria-label="Controles de toque">
@@ -87,6 +112,8 @@ export class GameView {
           <button class="touch-pause" type="button" aria-label="Pausar">Ⅱ</button>
         </div>
         <section class="cards-overlay" hidden aria-label="Escolha uma carta"><div class="cards-panel"><span class="cards-kicker">UM NOVO NÍVEL</span><h2>ESCOLHA SUA CARTA</h2><p>A estrada fica mais perigosa a cada minuto.</p><div class="cards-list"></div></div></section>
+        <section class="run-merchant" hidden aria-label="Bento, o mercador"><div class="run-merchant-panel"><img src="${BASE_URL}art/menu/bento.webp" alt="Bento"><div><small>MERCADOR DA ESTRADA</small><h2>BENTO</h2><p class="run-wallet"></p><div class="run-products"></div><button type="button" class="leave-merchant">VOLTAR À ESTRADA</button></div></div></section>
+        <div class="pickup-toast" hidden role="status"></div>
         <section class="end-overlay" hidden><div class="end-panel"><span class="end-kicker">BLACK TRAIL ORDER</span><h2 class="end-title"></h2><p class="end-copy"></p><button class="restart-button" type="button">NOVA JORNADA</button></div></section>
         <div class="xp-track" role="progressbar" aria-label="Experiência para o próximo nível" aria-valuemin="0" aria-valuenow="0" aria-valuemax="100"><div class="xp-fill"></div><span class="xp-label">NÍVEL 1 · 0/100 XP</span></div>
         <div class="rotate-device" role="status"><span class="rotate-symbol" aria-hidden="true">▯</span><strong>GIRE O APARELHO</strong><p>Jogue na horizontal. Se preciso, desative o bloqueio de rotação.</p></div>
@@ -95,27 +122,36 @@ export class GameView {
     this.root.prepend(this.renderer.domElement);
     this.root.classList.add('game-root');
     this.buttons = {
-      enter: this.root.querySelector('.enter-button'),
       menu: this.root.querySelector('.main-menu'),
       resume: this.root.querySelector('.resume-button'),
-      guide: this.root.querySelector('.guide-button'),
-      guideText: this.root.querySelector('.menu-guide'),
       cards: this.root.querySelector('.cards-overlay'),
       cardsList: this.root.querySelector('.cards-list'),
+      runMerchant: this.root.querySelector('.run-merchant'),
+      runProducts: this.root.querySelector('.run-products'),
+      runWallet: this.root.querySelector('.run-wallet'),
+      pickupToast: this.root.querySelector('.pickup-toast'),
       end: this.root.querySelector('.end-overlay'),
       health: this.root.querySelector('.health-value'),
       coins: this.root.querySelector('.coins-value'),
+      timer: this.root.querySelector('.timer-value'),
+      timerStatus: this.root.querySelector('.timer-status'),
+      bossBars: this.root.querySelector('.boss-bars'),
       xpTrack: this.root.querySelector('.xp-track'),
       xpFill: this.root.querySelector('.xp-fill'),
       xpLabel: this.root.querySelector('.xp-label'),
     };
-    this.buttons.enter.addEventListener('click', () => this.viewModel.start());
+    this.menuViewModel.view = new MenuView(this.root.querySelector('.menu-content'));
+    this.menuViewModel.mount();
     this.buttons.resume.addEventListener('click', () => this.viewModel.start());
-    this.buttons.guide.addEventListener('click', () => { this.buttons.guideText.hidden = !this.buttons.guideText.hidden; });
     this.buttons.cardsList.addEventListener('click', (event) => {
       const button = event.target.closest('[data-card]');
       if (button) this.viewModel.chooseCard(button.dataset.card);
     });
+    this.buttons.runProducts.addEventListener('click', event => {
+      const button = event.target.closest('[data-run-buy]');
+      if (button) this.viewModel.buyFromMerchant(button.dataset.runBuy);
+    });
+    this.root.querySelector('.leave-merchant').addEventListener('click', () => this.viewModel.leaveMerchant());
     this.root.querySelector('.restart-button').addEventListener('click', () => window.location.reload());
     this.bindTouchControls();
     this.controls.addEventListener('lock', () => {
@@ -192,20 +228,37 @@ export class GameView {
   }
 
   showCards(offers) {
-    const cards = {
-      damage: ['✦', 'CHICOTE REFORÇADO', '+5 de dano no chicote'],
-      cooldown: ['⌛', 'PULSO FIRME', 'Chicotadas mais frequentes'],
-      speed: ['➤', 'PASSO VELOZ', 'João anda mais rápido'],
-      health: ['♥', 'CORAÇÃO DE VAQUEIRO', '+20 de vida máxima e cura 20'],
-    };
-    this.buttons.cardsList.innerHTML = offers.map((id) => {
-      const [icon, name, description] = cards[id];
-      return `<button type="button" data-card="${id}"><b>${icon}</b><strong>${name}</strong><span>${description}</span></button>`;
+    this.audio.play('level', .35);
+    this.buttons.cardsList.innerHTML = offers.map(id => {
+      const card = ABILITIES[id], level = this.viewModel.model.abilities[id] + 1;
+      return `<button class="ability-card color-${card.color}" type="button" data-card="${id}"><small>${card.suit} · NÍVEL ${level}/${abilityMaxLevel(id)}</small><b>${card.icon}</b><strong>${card.name}</strong><span>${cardDescription(id, level, this.viewModel.model.attributes().attack)}</span></button>`;
     }).join('');
     this.buttons.cards.hidden = false;
   }
 
   hideCards() { this.buttons.cards.hidden = true; }
+
+  showRunMerchant(model) {
+    this.buttons.runWallet.textContent = `MOEDAS NA PARTIDA · ${model.coins}`;
+    const products = [
+      ['whip', 'Arma reforçada', '+5 de dano nesta partida'],
+      ['health', 'Bandagem de Bento', '+25 de vida agora'],
+      ['speed', 'Botas ligeiras', 'Mais velocidade nesta partida'],
+    ];
+    this.buttons.runProducts.innerHTML = products.map(([id, name, detail]) => {
+      const price = this.viewModel.merchantPrice(id);
+      return `<button type="button" data-run-buy="${id}" ${model.coins < price ? 'disabled' : ''}><b>${name}</b><span>${detail}</span><strong>◈ ${price}</strong></button>`;
+    }).join('');
+    this.buttons.runMerchant.hidden = false;
+  }
+
+  hideRunMerchant() { this.buttons.runMerchant.hidden = true; }
+
+  showPickupMessage(message) {
+    this.buttons.pickupToast.textContent = message;
+    this.buttons.pickupToast.hidden = false;
+    this.pickupMessageExpires = performance.now() + 2500;
+  }
 
   showEnd(model) {
     if (this.endShown) return;
@@ -218,11 +271,11 @@ export class GameView {
   }
 
   addLighting() {
-    const sky = new THREE.HemisphereLight(0xc8dcff, 0x393945, 2.3);
+    const sky = new THREE.HemisphereLight(0xc8dcff, 0x393945, 1.9);
     this.scene.add(sky);
-    const moonlight = new THREE.DirectionalLight(0xc6dcff, 2.7);
-    moonlight.position.set(-70, 85, -130);
-    this.scene.add(moonlight);
+    this.moonlight = new THREE.DirectionalLight(0xc6dcff, 2.75);
+    this.moonlight.position.set(-70, 85, -130);
+    this.scene.add(this.moonlight);
     const rim = new THREE.DirectionalLight(0x7a8cb8, 0.6);
     rim.position.set(30, 20, 42);
     this.scene.add(rim);
@@ -235,6 +288,7 @@ export class GameView {
     const halo = new THREE.Mesh(new THREE.SphereGeometry(14.5, 16, 8), new THREE.MeshBasicMaterial({ color: '#8ca9de', transparent: true, opacity: 0.11, depthWrite: false, fog: false }));
     halo.position.copy(moon.position);
     this.scene.add(halo);
+    this.moonHalo = halo;
     const stars = new Float32Array(110 * 3);
     for (let i = 0; i < 110; i++) {
       const angle = i * 2.399963;
@@ -262,6 +316,11 @@ export class GameView {
     const material = source.clone();
     applyPSXMaterial(material, { snap: true, affine });
     return material;
+  }
+
+  loadSharedAsset(filename) {
+    if (!this.assetPromises.has(filename)) this.assetPromises.set(filename, this.loader.loadAsync(`${MODEL_ROOT}${filename}`));
+    return this.assetPromises.get(filename);
   }
 
   buildTerrain() {
@@ -329,6 +388,7 @@ export class GameView {
       butte.position.set(x, height * 0.5 - 1, z);
       butte.scale.x = width;
       this.world.add(butte);
+      this.addStaticBoxCollider(x - 26 * width, x + 26 * width, z - 26, z + 26);
     }
   }
 
@@ -347,6 +407,7 @@ export class GameView {
       dune.scale.set(17 + (row % 3) * 3, height, 10 + (row % 4));
       dune.rotation.y = row * 0.62;
       this.world.add(dune);
+      this.addFootprint(dune, 1.1);
     }
 
     const cactusMat = this.mat('#354f50');
@@ -415,6 +476,18 @@ export class GameView {
     this.viewModel?.addCollider(x, z, radius);
   }
 
+  addStaticBoxCollider(minX, maxX, minZ, maxZ) {
+    const collider = { kind: 'box', minX, maxX, minZ, maxZ };
+    this.colliderSpecs.push(collider);
+    this.viewModel?.addBoxCollider(minX, maxX, minZ, maxZ);
+  }
+
+  addFootprint(scene, inset = 0) {
+    scene.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(scene);
+    this.addStaticBoxCollider(bounds.min.x + inset, bounds.max.x - inset, bounds.min.z + inset, bounds.max.z - inset);
+  }
+
   buildProceduralWagons() {
     for (const [x, z, rotation] of [[-31, 145, 0.2], [39, 15, -0.65], [-48, -155, 0.34]]) {
       const wagon = new THREE.Group();
@@ -446,7 +519,7 @@ export class GameView {
       wagon.position.set(x, 0, z);
       wagon.rotation.y = rotation;
       this.world.add(wagon);
-      this.addStaticCollider(x, z, 2.8);
+      this.addFootprint(wagon, 0.1);
     }
   }
 
@@ -484,6 +557,7 @@ export class GameView {
     const wood = this.mat('#51444b');
     const sections = [[21, 187, 5], [31, 102, 6], [-36, 61, 4], [39, -28, 6], [-46, -126, 5], [28, -190, 5]];
     for (const [x, z, count] of sections) {
+      this.addStaticBoxCollider(x - 0.12, x + (count - 1) * 2.2 + 0.12, z - 0.18, z + 0.18);
       for (let i = 0; i < count; i++) {
         const post = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.45, 0.24), wood);
         post.position.set(x + i * 2.2, 0.72, z);
@@ -502,7 +576,8 @@ export class GameView {
   async loadProp(kind, x, z) {
     const paths = { grave: 'gravestone.glb', tree: 'dead-tree.glb', coffin: 'coffin.glb' };
     try {
-      const { scene } = await this.loader.loadAsync(`${MODEL_ROOT}${paths[kind]}`);
+      const asset = await this.loadSharedAsset(paths[kind]);
+      const scene = asset.scene.clone(true);
       scene.traverse((child) => {
         if (!child.isMesh) return;
         child.castShadow = true;
@@ -520,7 +595,8 @@ export class GameView {
       scene.position.set(x, -scaledBounds.min.y, z);
       scene.rotation.y = ((Math.abs(x * 7 + z * 3) % 21) - 10) * 0.08;
       this.world.add(scene);
-      this.addStaticCollider(x, z, kind === 'tree' ? 0.8 : 0.75);
+      if (kind === 'tree') this.addStaticCollider(x, z, 0.9);
+      else this.addFootprint(scene, 0.05);
     } catch (error) {
       console.error(`Não foi possível carregar o marco ${kind}.`, error);
     }
@@ -531,7 +607,8 @@ export class GameView {
     for (const [filename, x, z, scale, rotation] of [
       ['waypost.glb', 25, 155, 1.8, -0.3],
     ]) {
-      const task = this.loader.loadAsync(`${MODEL_ROOT}${filename}`).then(({ scene }) => {
+      const task = this.loadSharedAsset(filename).then((asset) => {
+        const scene = asset.scene.clone(true);
         scene.traverse((child) => {
           if (!child.isMesh) return;
           child.castShadow = true;
@@ -555,13 +632,94 @@ export class GameView {
       ['shack.glb', 51, -43, 11, -0.42],
       ['mudbrick-house.glb', -52, -148, 13, 0.2],
     ]) progress.push(this.loadHouse(filename, x, z, width, rotation));
-    for (const type of ['bat', 'dog', 'skeleton', 'marshal']) progress.push(this.loadEnemyTemplate(type));
+    for (const [filename, x, z, width, rotation, zUp] of [
+      ['psx_abandoned_house.glb', -65, 133, 11, 0.24, true],
+      ['psx_abandoned_church.glb', 77, 28, 14, -0.28, true],
+      ['psx_old_abandoned_mansion.glb', -78, -55, 16, 0.18, true],
+      ['low_poly_western_saloon.glb', 73, -165, 14, -0.18, false],
+    ]) progress.push(this.loadScenery(filename, x, z, width, rotation, { zUp, solid: true }));
+    for (const [x, z, width] of [[-25, 196, 5], [52, 129, 6], [-89, 24, 7], [90, -78, 6], [-57, -210, 5]])
+      progress.push(this.loadScenery('tree_ps1psx_style.glb', x, z, width, 0, { trunkRadius: 1.1 }));
+    for (const [x, z] of [[31, 165], [-40, 44], [49, -59], [-51, -172]])
+      progress.push(this.loadScenery('psx_barrel.glb', x, z, 1.2, 0.4, { zUp: true, solid: true }));
+    for (const [x, z, rotation] of [[-27, -93, 0.35], [30, -176, -0.48]])
+      progress.push(this.loadCorpse(x, z, rotation));
+    for (const [type, filename] of [
+      ['bat', 'bat.glb'], ['dog', 'dog.glb'], ['skeleton', 'skeleton.glb'], ['marshal', 'marshal.glb'],
+      ['crow', 'low_poly_crow.glb'], ['zombie', 'lowpoly_zombie.glb'],
+      ['bonewalker', 'low_poly_psx_skeleton.glb'], ['wendigo', 'stylized_low-poly_wendigo.glb'],
+      ['snatcher', 'psx_snatcher_-_low_poly_horror.glb'],
+    ]) progress.push(this.loadEnemyTemplate(type, filename));
+    for (const filename of ['ps1_style_health_bandage.glb', 'chest.glb', 'bento_psx(1).glb'])
+      progress.push(this.loadEventTemplate(filename));
     Promise.allSettled(progress);
+  }
+
+  async loadScenery(filename, x, z, width, rotation, { zUp = false, solid = false, trunkRadius = 0 } = {}) {
+    try {
+      const asset = await this.loadSharedAsset(filename);
+      const scene = asset.scene.clone(true);
+      scene.traverse(child => {
+        if (!child.isMesh) return;
+        child.material = Array.isArray(child.material)
+          ? child.material.map(material => this.psxMaterial(material, 0.4))
+          : this.psxMaterial(child.material, 0.4);
+      });
+      if (zUp) scene.rotation.x = -Math.PI / 2;
+      scene.updateMatrixWorld(true);
+      const raw = new THREE.Box3().setFromObject(scene);
+      const size = raw.getSize(new THREE.Vector3());
+      scene.scale.setScalar(width / Math.max(size.x, size.z));
+      scene.rotation.y = rotation;
+      scene.updateMatrixWorld(true);
+      const floor = new THREE.Box3().setFromObject(scene);
+      scene.position.set(x, -floor.min.y, z);
+      this.world.add(scene);
+      if (solid) this.addFootprint(scene, 0.15);
+      else if (trunkRadius) this.addStaticCollider(x, z, trunkRadius);
+    } catch (error) { console.warn(`Cenário ${filename} indisponível.`, error); }
+  }
+
+  async loadCorpse(x, z, rotation) {
+    try {
+      const asset = await this.loadSharedAsset('lowpoly_zombie.glb');
+      const scene = asset.scene.clone(true);
+      scene.traverse(child => {
+        if (child.isMesh) child.material = Array.isArray(child.material)
+          ? child.material.map(material => this.psxMaterial(material, 0.4))
+          : this.psxMaterial(child.material, 0.4);
+      });
+      scene.updateMatrixWorld(true);
+      const size = new THREE.Box3().setFromObject(scene).getSize(new THREE.Vector3());
+      scene.scale.setScalar(1.8 / size.y);
+      scene.rotation.set(0, rotation, Math.PI / 2);
+      scene.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(scene);
+      scene.position.set(x, -bounds.min.y + 0.06, z);
+      this.world.add(scene);
+      this.addFootprint(scene, 0.02);
+    } catch (error) { console.warn('Corpo de cenário indisponível.', error); }
+  }
+
+  async loadEventTemplate(filename) {
+    try {
+      const asset = await this.loadSharedAsset(filename);
+      const scene = asset.scene.clone(true);
+      scene.traverse(child => {
+        if (!child.isMesh) return;
+        child.material = Array.isArray(child.material)
+          ? child.material.map(material => this.psxMaterial(material, 0.4))
+          : this.psxMaterial(child.material, 0.4);
+      });
+      this.eventTemplates ||= new Map();
+      this.eventTemplates.set(filename, scene);
+    } catch (error) { console.warn(`Item ${filename} indisponível.`, error); }
   }
 
   async loadHouse(filename, x, z, desiredWidth, rotation) {
     try {
-      const { scene } = await this.loader.loadAsync(`${MODEL_ROOT}${filename}`);
+      const asset = await this.loadSharedAsset(filename);
+      const scene = asset.scene.clone(true);
       scene.traverse((child) => {
         if (!child.isMesh) return;
         child.castShadow = true;
@@ -577,30 +735,41 @@ export class GameView {
       scene.position.set(x, -floor.min.y, z);
       scene.rotation.y = rotation;
       this.world.add(scene);
-      this.addStaticCollider(x, z, desiredWidth * 0.34);
+      this.addFootprint(scene, Math.min(0.4, desiredWidth * 0.03));
       const lantern = new THREE.PointLight(0xffa75c, 11, 14, 2);
       lantern.position.set(x + 3, 2.5, z + 2);
       this.world.add(lantern);
+      (this.lanterns ||= []).push(lantern);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.28, 0.18), new THREE.MeshBasicMaterial({ color: '#ffb565' }));
+      lamp.position.copy(lantern.position);
+      this.world.add(lamp);
     } catch (error) {
       console.error(`Falha ao carregar ${filename}`, error);
     }
   }
 
-  async loadEnemyTemplate(type) {
+  async loadEnemyTemplate(type, filename = `${type}.glb`) {
     try {
-      const { scene, animations } = await this.loader.loadAsync(`${MODEL_ROOT}${type}.glb`);
+      const { scene, animations } = await this.loader.loadAsync(`${MODEL_ROOT}${filename}`);
       scene.traverse((child) => {
         if (!child.isMesh) return;
         child.castShadow = true;
+        const convert = material => {
+          const result = this.psxMaterial(material, 0.35);
+          if (type === 'crow' && !result.map) result.color.set('#333044');
+          return result;
+        };
         child.material = Array.isArray(child.material)
-          ? child.material.map((material) => this.psxMaterial(material, 0.35))
-          : this.psxMaterial(child.material, 0.35);
+          ? child.material.map(convert)
+          : convert(child.material);
       });
       const bounds = new THREE.Box3().setFromObject(scene);
       const size = bounds.getSize(new THREE.Vector3());
-      scene.scale.setScalar((type === 'bat' ? 2.15 : 2.3) / Math.max(size.x, size.y, size.z));
+      const flight = type === 'bat' || type === 'crow';
+      const desired = type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3;
+      scene.scale.setScalar(desired / Math.max(size.x, size.y, size.z));
       const scaled = new THREE.Box3().setFromObject(scene);
-      scene.position.y = type === 'bat' ? -(scaled.min.y + scaled.max.y) / 2 : -scaled.min.y;
+      scene.position.y = flight ? -(scaled.min.y + scaled.max.y) / 2 : -scaled.min.y;
       this.enemyTemplates.set(type, { scene, animations });
     } catch (error) {
       console.error(`Falha ao carregar ${type}.`, error);
@@ -612,17 +781,51 @@ export class GameView {
     if (!template) return null;
     const root = new THREE.Group();
     const body = cloneSkinned(template.scene);
+    const deformables = this.prepareProceduralLimbs(body, type);
     root.add(body);
     root.position.set(x, y, z);
     const scale = boss ? 2.7 : 1;
     root.scale.setScalar(scale);
     this.world.add(root);
     const mixer = new THREE.AnimationMixer(body);
-    const preferred = type === 'bat' ? /fly/i : /run|walk/i;
+    const preferred = type === 'bat' || type === 'crow' ? /fly/i : /run|walk/i;
     const clip = template.animations.find((item) => preferred.test(item.name)) || template.animations[0];
-    if (clip) mixer.clipAction(clip).play();
-    this.enemyActors.set(root, { mixer, flash: 0, scale });
+    const walk = clip ? mixer.clipAction(clip).play() : null;
+    const attackClip = template.animations.find(item => /attack|punch|bite|strike/i.test(item.name));
+    const hurtClip = template.animations.find(item => /hurt|damage|hit|impact/i.test(item.name));
+    this.enemyActors.set(root, { mixer, body, walk, attack: attackClip ? mixer.clipAction(attackClip) : null,
+      hurt: hurtClip ? mixer.clipAction(hurtClip) : null, flash: 0, hitTime: 0, attackTime: 0, scale,
+      baseY: body.position.y, phase: Math.random() * Math.PI * 2, deformables });
     return root;
+  }
+
+  prepareProceduralLimbs(body, type) {
+    if (!['zombie', 'bonewalker', 'crow'].includes(type)) return [];
+    const deformables = [];
+    body.traverse(child => {
+      if (!child.isMesh || child.isSkinnedMesh) return;
+      child.geometry = child.geometry.clone();
+      child.userData.proceduralGeometry = true;
+      child.frustumCulled = false;
+      const position = child.geometry.getAttribute('position');
+      position.setUsage(THREE.DynamicDrawUsage);
+      const original = Float32Array.from(position.array);
+      child.geometry.computeBoundingBox();
+      const box = child.geometry.boundingBox;
+      const width = box.max.x - box.min.x, height = box.max.y - box.min.y;
+      const midX = (box.min.x + box.max.x) * 0.5;
+      const pivotY = box.min.y + height * (type === 'crow' ? 0.48 : 0.65);
+      const threshold = width * (type === 'crow' ? 0.16 : 0.21);
+      const pivotOffset = width * (type === 'crow' ? 0.12 : 0.15);
+      const limbs = [];
+      for (let i = 0; i < position.count; i++) {
+        const px = original[i * 3], py = original[i * 3 + 1];
+        if (Math.abs(px - midX) < threshold || py < pivotY - height * 0.09) continue;
+        limbs.push({ i, side: Math.sign(px - midX), pivotX: midX + Math.sign(px - midX) * pivotOffset });
+      }
+      if (limbs.length) deformables.push({ position, original, pivotY, limbs, type });
+    });
+    return deformables;
   }
 
   updateEnemy(object, delta) {
@@ -630,19 +833,91 @@ export class GameView {
     if (!actor) return;
     actor.mixer.update(delta);
     actor.flash = Math.max(0, actor.flash - delta);
-    object.scale.setScalar(actor.scale * (actor.flash > 0 ? 1.1 : 1));
+    actor.hitTime = Math.max(0, actor.hitTime - delta);
+    actor.attackTime = Math.max(0, actor.attackTime - delta);
+    actor.phase += delta * 7;
+    const stride = Math.sin(actor.phase);
+    for (const { position, original, pivotY, limbs, type } of actor.deformables) {
+      const attack = actor.attackTime > 0 ? Math.sin(actor.attackTime / 0.35 * Math.PI) : 0;
+      const hit = actor.hitTime > 0 ? Math.sin(actor.hitTime / 0.28 * Math.PI) : 0;
+      for (const { i, side, pivotX } of limbs) {
+        const dx = original[i * 3] - pivotX, dy = original[i * 3 + 1] - pivotY;
+        const angle = type === 'crow' ? side * (Math.sin(actor.phase * 1.7) * 0.44 + hit * 0.18)
+          : -side * (0.62 + stride * 0.14 - attack * 0.5 + hit * 0.28);
+        const c = Math.cos(angle), s = Math.sin(angle);
+        position.setXYZ(i, pivotX + dx * c - dy * s, pivotY + dx * s + dy * c, original[i * 3 + 2]);
+      }
+      position.needsUpdate = true;
+    }
+    actor.body.position.y = actor.baseY + (actor.hitTime > 0 ? -0.11 * Math.sin(actor.hitTime / 0.28 * Math.PI) : Math.abs(stride) * 0.07);
+    actor.body.rotation.z = (actor.hitTime > 0 ? 0.18 * Math.sin(actor.hitTime / 0.28 * Math.PI) : stride * 0.07) * (object.scale.x < 2 ? 1 : 0.6);
+    actor.body.rotation.x = actor.attackTime > 0 ? -Math.sin(actor.attackTime / 0.35 * Math.PI) * 0.28 : Math.sin(actor.phase * 0.5) * 0.025;
+    object.scale.setScalar(actor.scale * (actor.flash > 0 ? 1.045 : 1));
   }
 
   hitEnemy(object) {
     const actor = this.enemyActors.get(object);
-    if (actor) actor.flash = 0.1;
+    if (!actor) return;
+    actor.flash = 0.15;
+    actor.hitTime = 0.28;
+    if (actor.hurt) { actor.hurt.reset().setLoop(THREE.LoopOnce, 1).play(); actor.hurt.clampWhenFinished = true; }
+  }
+
+  attackEnemy(object) {
+    const actor = this.enemyActors.get(object);
+    if (!actor) return;
+    actor.attackTime = 0.35;
+    if (actor.attack) { actor.attack.reset().setLoop(THREE.LoopOnce, 1).play(); actor.attack.clampWhenFinished = true; }
   }
 
   removeEnemy(object) {
     if (!object) return;
     this.world.remove(object);
     this.enemyActors.get(object)?.mixer.stopAllAction();
+    object.traverse(child => {
+      if (child.userData.proceduralGeometry) child.geometry.dispose();
+    });
     this.enemyActors.delete(object);
+  }
+
+  addEventObject(kind, x, z) {
+    const specs = {
+      bandage: ['ps1_style_health_bandage.glb', 0.85, true],
+      chest: ['chest.glb', 1.45, true],
+      merchant: ['bento_psx(1).glb', 2.2, true],
+    };
+    const [filename, desired, zUp] = specs[kind] || [];
+    const template = this.eventTemplates?.get(filename);
+    if (!template) return null;
+    const scene = template.clone(true);
+    if (zUp) scene.rotation.x = -Math.PI / 2;
+    scene.updateMatrixWorld(true);
+    const original = new THREE.Box3().setFromObject(scene);
+    const size = original.getSize(new THREE.Vector3());
+    const scale = desired / (kind === 'merchant' ? size.y : Math.max(size.x, size.z));
+    scene.scale.setScalar(scale);
+    scene.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(scene);
+    const center = bounds.getCenter(new THREE.Vector3());
+    scene.position.set(-center.x, -bounds.min.y, -center.z);
+    const object = new THREE.Group();
+    object.position.set(x, 0, z);
+    object.add(scene);
+    this.world.add(object);
+    return object;
+  }
+
+  removeEventObject(object) { if (object) this.world.remove(object); }
+
+  updateEventObject(object, kind, age) {
+    if (!object) return;
+    if (kind === 'bandage') {
+      object.position.y = 0.15 + Math.sin(age * 2.4) * 0.13;
+      object.rotation.y += 0.012;
+    } else if (kind === 'merchant') {
+      object.rotation.y = Math.sin(age * 0.8) * 0.08;
+      object.position.y = Math.sin(age * 2) * 0.025;
+    }
   }
 
   addLoot(x, z, kind = 'xp') {
@@ -670,6 +945,55 @@ export class GameView {
 
   startWhip() {
     this.whipTimer = 0.38;
+    if (this.armsMixer && this.armsStrike) {
+      this.armsMixer.stopAllAction();
+      this.armsStrike.reset().setLoop(THREE.LoopOnce, 1).play();
+      this.armsStrike.clampWhenFinished = true;
+    }
+  }
+
+  whipCrack() {
+    this.crackTimer = 0.14;
+    this.crackEffect.visible = true;
+    try { this.whipAudio.currentTime = 0; this.whipAudio.play().catch(() => {}); } catch { /* Áudio opcional. */ }
+  }
+
+  createCrackEffect() {
+    const burst = new THREE.Group();
+    burst.position.set(0, -0.1, -4.4);
+    const material = new THREE.MeshBasicMaterial({ color: '#ffe1aa', transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 3, 10), material);
+    burst.add(ring);
+    const points = [];
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      points.push(new THREE.Vector3(Math.cos(angle) * 0.37, Math.sin(angle) * 0.37, 0));
+      points.push(new THREE.Vector3(Math.cos(angle) * 0.62, Math.sin(angle) * 0.62, 0));
+    }
+    burst.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: '#fff3d0', transparent: true, opacity: 0.85, depthTest: false })));
+    burst.visible = false;
+    return burst;
+  }
+
+  setChampion(champion) {
+    this.weapon.visible = champion !== 'maria';
+    this.revolver.visible = champion === 'maria';
+  }
+
+  fireRevolver() { this.recoil = 1; this.audio.play('shot', .65, .94 + Math.random()*.07); }
+  fireAbilityPistol() { this.pistolFlash = .3; this.audio.play('shot', .35, 1.08); }
+
+  createRevolver() {
+    const group = new THREE.Group();
+    const steel = new THREE.MeshStandardMaterial({color:'#68757f',metalness:.7,roughness:.65,depthTest:false});
+    const wood = new THREE.MeshStandardMaterial({color:'#663f2c',roughness:1,depthTest:false});
+    const box = (w,h,d,x,y,z,material) => {const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);mesh.position.set(x,y,z);group.add(mesh);return mesh;};
+    box(.12,.13,.42,0,.06,-.18,steel);
+    const grip=box(.11,.24,.1,0,-.12,.05,wood);grip.rotation.x=-.25;
+    const drum=new THREE.Mesh(new THREE.CylinderGeometry(.09,.09,.14,6),steel);drum.rotation.x=Math.PI/2;drum.position.set(0,.02,0);group.add(drum);
+    box(.025,.045,.04,0,.145,-.34,steel);
+    const flash=new THREE.Mesh(new THREE.ConeGeometry(.1,.25,5),new THREE.MeshBasicMaterial({color:'#ffe3a2',depthTest:false}));flash.rotation.x=-Math.PI/2;flash.position.set(0,.06,-.5);flash.visible=false;group.add(flash);group.userData.flash=flash;
+    group.traverse(item=>{if(item.isMesh)item.renderOrder=5;});return group;
   }
 
   createWhipHand() {
@@ -701,7 +1025,9 @@ export class GameView {
     cord.position.set(0.02, -0.04, -0.05);
     cord.rotation.y = Math.PI / 2;
     group.add(cord);
-    group.traverse((child) => { if (child.isMesh) child.renderOrder = 3; });
+    arm.visible = false;
+    hand.visible = false;
+    group.traverse((child) => { if (child.isMesh) { child.renderOrder = 3; child.material = child.material.clone(); child.material.depthTest = false; } });
     return group;
   }
 
@@ -744,8 +1070,8 @@ export class GameView {
     let index = 0;
     for (let i = 0; i < 24; i++) {
       const a = points[i], b = points[i + 1];
-      const widthA = 0.025 + i / 24 * 0.06;
-      const widthB = 0.025 + (i + 1) / 24 * 0.06;
+      const widthA = 0.012 + (1 - i / 24) * 0.055;
+      const widthB = 0.012 + (1 - (i + 1) / 24) * 0.055;
       for (const [point, lift] of [[a, widthA], [a, -widthA], [b, widthB], [a, -widthA], [b, -widthB], [b, widthB]]) {
         positions.setXYZ(index++, point.x, point.y + lift, point.z);
       }
@@ -775,23 +1101,78 @@ export class GameView {
     return { forwardX, forwardZ, rightX: -forwardZ, rightZ: forwardX };
   }
 
+  syncBossBars(model) {
+    const bosses = model.enemies.filter(enemy => enemy.boss && enemy.hp > 0);
+    const active = new Set(bosses);
+    for (const [enemy, node] of this.bossBarNodes) {
+      if (active.has(enemy)) continue;
+      node.remove();
+      this.bossBarNodes.delete(enemy);
+    }
+    if (!bosses.length) return;
+    this.camera.updateMatrixWorld();
+    const width = this.root.clientWidth, height = this.root.clientHeight;
+    const labels = { giantBat: 'MORCEGO GIGANTE', fireChupacabra: 'CHUPACABRA DE FOGO', shadowMarshal: 'MARECHAL DAS SOMBRAS' };
+    for (const enemy of bosses) {
+      let node = this.bossBarNodes.get(enemy);
+      if (!node) {
+        node = document.createElement('div');
+        node.className = 'boss-float-bar';
+        node.innerHTML = '<strong></strong><div><i></i></div>';
+        node.querySelector('strong').textContent = labels[enemy.type] || 'CHEFE';
+        this.buttons.bossBars.append(node);
+        this.bossBarNodes.set(enemy, node);
+      }
+      const point = new THREE.Vector3(enemy.x, enemy.y + (enemy.visual === 'bat' ? 3.6 : 4.8), enemy.z);
+      point.project(this.camera);
+      const visible = point.z < 1 && point.z > -1 && Math.abs(point.x) < 1.2 && Math.abs(point.y) < 1.3;
+      node.hidden = !visible;
+      if (!visible) continue;
+      node.style.left = `${(point.x * 0.5 + 0.5) * width}px`;
+      node.style.top = `${(-point.y * 0.5 + 0.5) * height}px`;
+      node.querySelector('i').style.width = `${Math.max(0, enemy.hp / enemy.maxHp * 100)}%`;
+    }
+  }
+
   update(delta, model) {
+    this.audio.footsteps(delta, model.walking, model.attributes().speed);
+    this.abilityEffects.update(this.viewModel.abilitySystem, model, this.camera.position);
+    this.crackTimer = Math.max(0, this.crackTimer - delta);
+    this.crackEffect.visible = this.crackTimer > 0;
+    if (this.crackTimer > 0) this.crackEffect.scale.setScalar(1 + (0.14 - this.crackTimer) * 5);
+    this.crackLight.intensity = this.crackTimer / 0.14 * 3.5;
     const sway = model.walking ? Math.sin(model.elapsed * 10) : 0;
     const strike = model.whip.active ? model.whip.elapsed / 0.38 : -1;
     let swing = 0;
     if (strike >= 0 && strike < 0.24) swing = -strike / 0.24 * 0.38;
     else if (strike < 0.67 && strike >= 0) swing = -0.38 + (strike - 0.24) / 0.43 * 1.18;
     else if (strike >= 0) swing = 0.8 * (1 - (strike - 0.67) / 0.33);
-    this.weapon.position.x = 0.43 - Math.max(0, swing) * 0.33;
-    this.weapon.position.y = -0.49 + sway * 0.018 + Math.abs(swing) * 0.11;
-    this.weapon.rotation.z = -0.06 - swing * 1.25;
-    this.weapon.rotation.x = -0.04 - Math.max(0, swing) * 0.36;
+    this.weapon.position.set(0.43 - Math.max(0,swing)*.27 + sway*.007, -.49 + sway*.018 + Math.abs(swing)*.11, -.72);
+    this.weapon.rotation.set(-.04-Math.max(0,swing)*.36,-.07,-.06-swing*1.25);
+    this.recoil = Math.max(0, this.recoil - delta * 6);
+    this.revolver.position.set(.36+sway*.006,-.34+sway*.012,-.64+this.recoil*.09);
+    this.revolver.rotation.x = this.recoil*.25;
+    this.revolver.userData.flash.visible = this.recoil > .76;
+    this.pistolFlash = Math.max(0,this.pistolFlash-delta);
+    this.pistolEffect.visible = this.pistolFlash > 0;
+    this.pistolEffect.position.set(-.38,-.42+(this.pistolFlash/.3)*.08,-.74);
+    this.pistolEffect.userData.flash.visible = this.pistolFlash > .22;
     this.dust.rotation.y += delta * 0.018;
+    this.moonlight.intensity = 2.7 + Math.sin(performance.now() * 0.00043) * 0.14;
+    this.moonHalo.material.opacity = 0.11 + Math.sin(performance.now() * 0.0007) * 0.025;
+    this.lanterns?.forEach((light, index) => { light.intensity = 8.5 + Math.sin(performance.now() * 0.009 + index * 2.7) * 1.4; });
     this.updateWhip(delta);
     if (this.buttons) {
-      this.buttons.health.textContent = `${model.health}/${model.maxHealth}`;
+      this.buttons.health.textContent = `${Math.ceil(model.health)}/${Math.round(model.maxHealth)}`;
       this.buttons.health.style.color = model.health <= 30 ? '#ff8262' : '';
       this.buttons.coins.textContent = String(model.coins);
+      if (this.pickupMessageExpires && performance.now() > this.pickupMessageExpires) this.buttons.pickupToast.hidden = true;
+      const bossActive = model.enemies.some(enemy => enemy.boss);
+      const seconds = model.mode === 'campaign' ? Math.max(0, Math.ceil(900 - model.elapsed)) : Math.floor(model.elapsed);
+      this.buttons.timer.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+      this.buttons.timerStatus.textContent = bossActive ? 'TEMPO PARADO · CHEFE' : model.mode === 'campaign' ? 'ATÉ O AMANHECER' : 'TEMPO DE SOBREVIVÊNCIA';
+      this.buttons.timer.parentElement.classList.toggle('is-boss-time', bossActive);
+      this.syncBossBars(model);
       const xpCost = model.nextLevelCost();
       const xpProgress = Math.min(100, model.xp / xpCost * 100);
       this.buttons.xpFill.style.width = `${xpProgress}%`;

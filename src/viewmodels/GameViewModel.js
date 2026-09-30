@@ -1,3 +1,4 @@
+import { AbilitySystem } from '../systems/AbilitySystem.js';
 const LIMIT = 238;
 const RANGE = 5;
 const BOSSES = [
@@ -9,17 +10,29 @@ const STATS = {
   bat: { hp: 10, damage: 10, armor: 0, speed: 2.5, xp: 10 },
   dog: { hp: 35, damage: 14, armor: 2, speed: 3.5, xp: 20 },
   skeleton: { hp: 22, damage: 8, armor: 1, speed: 1.7, xp: 15 },
+  crow: { hp: 18, damage: 9, armor: 0, speed: 3.15, xp: 14 },
+  zombie: { hp: 36, damage: 12, armor: 1, speed: 1.45, xp: 23 },
+  bonewalker: { hp: 31, damage: 11, armor: 1, speed: 1.95, xp: 22 },
+  wendigo: { hp: 115, damage: 23, armor: 3, speed: 2.3, xp: 90 },
+  snatcher: { hp: 70, damage: 19, armor: 1, speed: 2.7, xp: 55 },
 };
 
 export class GameViewModel {
-  constructor(model, view) {
+  constructor(model, view, menuModel) {
     this.model = model;
     this.view = view;
+    this.menuModel = menuModel;
+    this.abilitySystem = new AbilitySystem(model, view, this);
     this.keys = new Set();
     this.colliders = [];
     this.spawnClock = 1.2;
     this.dogClock = 7;
     this.skeletonClock = 11;
+    this.extraClock = 8;
+    this.bandageClock = 55 + Math.random() * 35;
+    this.chestTimes = [90 + Math.random() * 95, 330 + Math.random() * 95, 610 + Math.random() * 95, 790 + Math.random() * 65];
+    this.nextChest = 0;
+    this.merchantWindow = -1;
     this.invulnerable = 0;
     this.fallbackLook = false;
     this.touchDevice = window.matchMedia('(pointer: coarse)').matches;
@@ -48,8 +61,8 @@ export class GameViewModel {
       if (!this.fallbackLook || !this.model.isLocked) return;
       const rotation = this.view.camera.rotation;
       rotation.order = 'YXZ';
-      rotation.y -= event.movementX * 0.002;
-      rotation.x = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, rotation.x - event.movementY * 0.002));
+      rotation.y -= event.movementX * 0.002 * this.sensitivity();
+      rotation.x = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, rotation.x - event.movementY * 0.002 * this.sensitivity()));
     };
   }
 
@@ -64,11 +77,30 @@ export class GameViewModel {
     this.view.mount(this);
   }
 
-  addCollider(x, z, radius) { this.colliders.push({ x, z, radius }); }
+  addCollider(x, z, radius) { this.colliders.push({ kind: 'circle', x, z, radius }); }
 
-  start() {
+  addBoxCollider(minX, maxX, minZ, maxZ) { this.colliders.push({ kind: 'box', minX, maxX, minZ, maxZ }); }
+
+  spotClear(x, z, padding = 0) {
+    if (Math.hypot(x, z) > LIMIT - padding) return false;
+    return this.colliders.every(item => item.kind === 'box'
+      ? x < item.minX - padding || x > item.maxX + padding || z < item.minZ - padding || z > item.maxZ + padding
+      : Math.hypot(x - item.x, z - item.z) >= item.radius + padding);
+  }
+
+  sensitivity() {
+    const key = this.touchDevice ? 'touchSensitivity' : 'mouseSensitivity';
+    return Math.max(.2, Math.min(3, Number(this.menuModel.settings[key]) || 1));
+  }
+
+  start(selection = null) {
+    this.view.audio.unlock();
+    this.view.controls.pointerSpeed = this.sensitivity();
     if (this.model.phase === 'menu') {
-      this.model.startRun();
+      if (!selection) return;
+      this.model.deck = [...this.menuModel.profile.deck];
+      this.model.startRun(selection, this.menuModel.profile.purchases);
+      this.view.setChampion(this.model.champion);
       this.view.hideMenu();
     }
     if (this.model.phase !== 'playing') return;
@@ -93,9 +125,9 @@ export class GameViewModel {
 
   async requestLandscape() {
     try {
-      if (!document.fullscreenElement && this.view.root.requestFullscreen) {
-        await this.view.root.requestFullscreen({ navigationUI: 'hide' });
-      }
+      const element = document.documentElement;
+      const request = element.requestFullscreen || element.webkitRequestFullscreen;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement && request) await request.call(element, { navigationUI: 'hide' });
     } catch {
       // Alguns navegadores móveis não oferecem tela cheia para elementos HTML.
     }
@@ -148,8 +180,8 @@ export class GameViewModel {
     if (!this.model.isLocked || this.model.phase !== 'playing') return;
     const rotation = this.view.camera.rotation;
     rotation.order = 'YXZ';
-    rotation.y -= dx * 0.003;
-    rotation.x = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, rotation.x - dy * 0.003));
+    rotation.y -= dx * 0.003 * this.sensitivity();
+    rotation.x = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, rotation.x - dy * 0.003 * this.sensitivity()));
   }
 
   update(delta) {
@@ -160,15 +192,19 @@ export class GameViewModel {
         this.releasePointer();
       } else {
         this.movePlayer(delta);
-        this.spawnWave(delta);
-        this.moveEnemies(delta);
-        this.moveProjectiles(delta);
-        this.collectLoot(delta);
-        if (this.model.phase === 'playing' && this.model.whip.cooldown === 0 && !this.model.whip.active) this.autoWhip();
-        if (this.model.phase === 'playing') this.whipImpact();
-        if (this.model.phase === 'playing' && this.model.health <= 0) {
-          this.model.phase = 'defeat';
-          this.releasePointer();
+        this.updateWorldEvents(delta);
+        if (this.model.phase === 'playing') {
+          this.spawnWave(delta);
+          this.moveEnemies(delta);
+          this.moveProjectiles(delta);
+          this.abilitySystem.update(delta);
+          this.collectLoot(delta);
+          if (this.model.hero.primary === 'whip' && this.model.whip.cooldown === 0 && !this.model.whip.active) this.autoWhip();
+          if (this.model.phase === 'playing') this.whipImpact();
+          if (this.model.phase === 'playing' && this.model.health <= 0) {
+            this.model.phase = 'defeat';
+            this.releasePointer();
+          }
         }
       }
     }
@@ -177,7 +213,7 @@ export class GameViewModel {
     this.model.updatePlayer({
       x: camera.position.x, z: camera.position.z,
       yaw: camera.rotation.y, pitch: camera.rotation.x,
-      walking: active && (this.keys.size > 0 || Math.hypot(this.touchMove.forward, this.touchMove.strafe) > 0.04),
+      walking: active && this.actuallyWalking,
     });
     this.view.update(active ? delta : 0, this.model);
   }
@@ -185,16 +221,18 @@ export class GameViewModel {
   movePlayer(delta) {
     const forward = Number(this.keys.has('KeyW') || this.keys.has('ArrowUp')) - Number(this.keys.has('KeyS') || this.keys.has('ArrowDown')) + this.touchMove.forward;
     const strafe = Number(this.keys.has('KeyD') || this.keys.has('ArrowRight')) - Number(this.keys.has('KeyA') || this.keys.has('ArrowLeft')) + this.touchMove.strafe;
+    this.actuallyWalking = false;
     if (!forward && !strafe) return;
-    const step = (5 + this.model.upgrades.speed * 0.5) * delta / Math.max(1, Math.hypot(forward, strafe));
+    const step = this.model.attributes().speed * delta / Math.max(1, Math.hypot(forward, strafe));
     const { forwardX, forwardZ, rightX, rightZ } = this.view.getPlanarFacing();
     const dx = (forwardX * forward + rightX * strafe) * step;
     const dz = (forwardZ * forward + rightZ * strafe) * step;
     const camera = this.view.camera;
-    const blocked = (x, z) => Math.hypot(x, z) > LIMIT ||
-      this.colliders.some((item) => Math.hypot(x - item.x, z - item.z) < item.radius + 0.48);
+    const oldX = camera.position.x, oldZ = camera.position.z;
+    const blocked = (x, z) => !this.spotClear(x, z, 0.48);
     if (!blocked(camera.position.x + dx, camera.position.z)) camera.position.x += dx;
     if (!blocked(camera.position.x, camera.position.z + dz)) camera.position.z += dz;
+    this.actuallyWalking = Math.hypot(camera.position.x-oldX, camera.position.z-oldZ) > .0001;
   }
 
   spawnWave(delta) {
@@ -220,52 +258,77 @@ export class GameViewModel {
         if (this.model.enemies.length < 48) this.spawnEnemy('skeleton');
       }
     }
+    if (elapsed >= 95) {
+      this.extraClock -= delta;
+      if (this.extraClock <= 0) {
+        this.extraClock = Math.max(3.8, 9 - elapsed / 220);
+        if (this.model.enemies.length < 48) {
+          const options = elapsed >= 600 ? ['crow', 'zombie', 'bonewalker', 'snatcher', 'wendigo']
+            : elapsed >= 300 ? ['crow', 'zombie', 'bonewalker', 'snatcher']
+              : ['crow', 'zombie'];
+          this.spawnEnemy(options[Math.floor(Math.random() * options.length)]);
+        }
+      }
+    }
     for (const boss of BOSSES) {
       if (elapsed < boss.at || this.model.bossesSpawned.has(boss.type)) continue;
-      this.model.bossesSpawned.add(boss.type);
-      this.spawnEnemy(boss.type, boss);
+      if (this.spawnEnemy(boss.type, boss)) this.model.bossesSpawned.add(boss.type);
     }
   }
 
   spawnEnemy(type, boss = null) {
     const visual = boss?.visual || type;
-    if (!this.view.enemyTemplates.has(visual)) return;
-    const camera = this.view.camera;
-    const angle = Math.random() * Math.PI * 2;
-    const distance = boss ? 18 : 25 + Math.random() * 8;
-    let x = camera.position.x + Math.cos(angle) * distance;
-    let z = camera.position.z + Math.sin(angle) * distance;
-    const edge = Math.hypot(x, z);
-    if (edge > 230) { x *= 230 / edge; z *= 230 / edge; }
-    const y = visual === 'bat' ? 2.2 + Math.random() * 1.2 : 0;
+    if (!this.view.enemyTemplates.has(visual)) return false;
+    const point = this.findEventSpot(boss ? 17 : 25, boss ? 22 : 33);
+    if (!point) return false;
+    const { x, z } = point;
+    const y = visual === 'bat' || visual === 'crow' ? 2.2 + Math.random() * 1.2 : 0;
     const object = this.view.addEnemy(visual, x, y, z, Boolean(boss));
-    if (!object) return;
+    if (!object) return false;
     const stats = boss || STATS[type];
     const minute = Math.floor(this.model.elapsed / 60);
     this.model.enemies.push({
       type, visual, object, x, y, z, boss: Boolean(boss),
       hp: boss ? stats.hp : Math.round(stats.hp * (1 + minute * 0.18)),
+      maxHp: boss ? stats.hp : Math.round(stats.hp * (1 + minute * 0.18)),
       damage: stats.damage, armor: boss ? 3 : stats.armor,
       speed: stats.speed, xp: stats.xp,
       phase: Math.random() * Math.PI * 2, shotClock: 2.6,
     });
+    return true;
   }
 
   moveEnemies(delta) {
     const player = this.view.camera.position;
     this.invulnerable = Math.max(0, this.invulnerable - delta);
     for (const enemy of this.model.enemies) {
+      const oldX = enemy.x, oldZ = enemy.z;
       const dx = player.x - enemy.x, dz = player.z - enemy.z;
       const distance = Math.max(0.001, Math.hypot(dx, dz));
       if (distance > (enemy.boss ? 2.1 : 1.1)) {
-        enemy.x += dx / distance * enemy.speed * delta;
-        enemy.z += dz / distance * enemy.speed * delta;
+        const travel = Math.max(0, enemy.speed - (enemy.knockback || 0)) * delta;
+        enemy.x += dx / distance * travel;
+        enemy.z += dz / distance * travel;
       }
-      enemy.object.position.set(enemy.x, enemy.y + (enemy.visual === 'bat' ? Math.sin(this.model.elapsed * 5 + enemy.phase) * 0.28 : 0), enemy.z);
+      if (enemy.knockback > 0) {
+        enemy.x += (enemy.knockX || 0) * enemy.knockback * delta;
+        enemy.z += (enemy.knockZ || 0) * enemy.knockback * delta;
+        enemy.knockback = Math.max(0, enemy.knockback - delta * 25);
+      }
+      const clearance = enemy.boss ? 0.9 : 0.42;
+      if (!this.spotClear(enemy.x, enemy.z, clearance)) {
+        if (this.spotClear(enemy.x, oldZ, clearance)) enemy.z = oldZ;
+        else if (this.spotClear(oldX, enemy.z, clearance)) enemy.x = oldX;
+        else { enemy.x = oldX; enemy.z = oldZ; }
+      }
+      enemy.object.position.set(enemy.x, enemy.y + (['bat', 'crow'].includes(enemy.visual) ? Math.sin(this.model.elapsed * 5 + enemy.phase) * 0.28 : 0), enemy.z);
       // Os modelos originais têm a frente em +Z, como no Faroeste Survivors.
       enemy.object.rotation.y = Math.atan2(dx, dz);
       this.view.updateEnemy(enemy.object, delta);
-      if (distance < (enemy.boss ? 2.2 : 1.35) && this.invulnerable === 0) this.hurt(enemy.damage);
+      if (distance < (enemy.boss ? 2.2 : 1.35) && this.invulnerable === 0) {
+        this.hurt(enemy.damage);
+        this.view.attackEnemy(enemy.object);
+      }
       if (enemy.boss && distance < 28) {
         enemy.shotClock -= delta;
         if (enemy.shotClock <= 0) {
@@ -277,7 +340,7 @@ export class GameViewModel {
   }
 
   hurt(amount) {
-    this.model.health = Math.max(0, this.model.health - amount);
+    this.model.health = Math.max(0, this.model.health - amount * 20 / (20 + this.model.attributes().armor));
     this.model.damageFlash = 0.22;
     this.invulnerable = 0.9;
   }
@@ -317,7 +380,7 @@ export class GameViewModel {
   autoWhip() {
     const camera = this.view.camera;
     const { forwardX, forwardZ } = this.view.getPlanarFacing();
-    let target = null, nearest = RANGE;
+    let target = null, nearest = this.model.attributes().range;
     for (const enemy of this.model.enemies) {
       const dx = enemy.x - camera.position.x, dz = enemy.z - camera.position.z;
       const distance = Math.hypot(dx, dz);
@@ -331,7 +394,7 @@ export class GameViewModel {
     whip.active = true;
     whip.elapsed = 0;
     whip.hitApplied = false;
-    whip.cooldown = Math.max(0.4, 1.05 - this.model.upgrades.cooldown * 0.1);
+    whip.cooldown = Math.max(0.4, this.model.hero.cooldown / this.model.attributes().attack);
     this.view.startWhip();
   }
 
@@ -339,14 +402,18 @@ export class GameViewModel {
     const whip = this.model.whip;
     if (!whip.active || whip.hitApplied || whip.elapsed < 0.18) return;
     whip.hitApplied = true;
+    this.view.whipCrack();
     const camera = this.view.camera;
     const { forwardX, forwardZ } = this.view.getPlanarFacing();
     for (const enemy of [...this.model.enemies]) {
       const dx = enemy.x - camera.position.x, dz = enemy.z - camera.position.z;
       const distance = Math.hypot(dx, dz);
-      if (distance > RANGE) continue;
+      if (distance > this.model.attributes().range) continue;
       if ((dx * forwardX + dz * forwardZ) / Math.max(0.001, distance) <= 0) continue;
-      enemy.hp -= Math.max(1, 10 + this.model.upgrades.damage * 5 - enemy.armor);
+      enemy.hp -= (this.model.attributes().damage * (Math.random() < this.model.attributes().crit ? 1.7 : 1)) * 20 / (20 + enemy.armor);
+      enemy.knockX = dx / Math.max(distance, 0.001);
+      enemy.knockZ = dz / Math.max(distance, 0.001);
+      enemy.knockback = enemy.boss ? 2.5 : 7;
       this.view.hitEnemy(enemy.object);
       if (enemy.hp <= 0) this.killEnemy(enemy);
     }
@@ -356,6 +423,9 @@ export class GameViewModel {
     this.view.removeEnemy(enemy.object);
     this.model.enemies.splice(this.model.enemies.indexOf(enemy), 1);
     this.model.kills += 1;
+    const rank = this.model.abilities.soulHarvest;
+    if (rank) this.model.health = Math.min(this.model.maxHealth, this.model.health + Math.min(4, rank + 1));
+    this.menuModel.discover(enemy.type);
     this.dropLoot(enemy.x, enemy.z, 'xp', enemy.xp);
     const chance = enemy.boss ? 1 : { bat: 0.12, dog: 0.3, skeleton: 0.22 }[enemy.type] ?? 0.15;
     if (Math.random() < chance) this.dropLoot(enemy.x + 0.5, enemy.z, 'coin', enemy.boss ? 10 : 1);
@@ -370,13 +440,114 @@ export class GameViewModel {
     this.model.loot.push({ object, x, z, kind, value });
   }
 
+  findEventSpot(minDistance, maxDistance) {
+    const player = this.view.camera.position;
+    for (let i = 0; i < 80; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = minDistance + Math.random() * (maxDistance - minDistance);
+      const x = player.x + Math.cos(angle) * radius;
+      const z = player.z + Math.sin(angle) * radius;
+      if (this.spotClear(x, z, 3)) return { x, z };
+    }
+    return null;
+  }
+
+  spawnPickup(kind, minDistance, maxDistance, lifetime, value) {
+    const point = this.findEventSpot(minDistance, maxDistance);
+    if (!point) return false;
+    const object = this.view.addEventObject(kind, point.x, point.z);
+    if (!object) return false;
+    this.model.pickups.push({ ...point, kind, object, age: 0, lifetime, value });
+    return true;
+  }
+
+  updateWorldEvents(delta) {
+    const elapsed = this.model.elapsed;
+    this.bandageClock -= delta;
+    if (this.bandageClock <= 0) {
+      this.bandageClock = 65 + Math.random() * 45;
+      if (this.model.pickups.filter(item => item.kind === 'bandage').length < 2)
+        this.spawnPickup('bandage', 15, 60, 100, 25);
+    }
+    if (this.nextChest < this.chestTimes.length && elapsed >= this.chestTimes[this.nextChest]) {
+      if (this.spawnPickup('chest', 35, 78, 40, 120 + Math.floor(Math.random() * 880))) this.nextChest++;
+    }
+    const windows = [[100, 180], [420, 600]];
+    const activeWindow = windows.findIndex(([start, end]) => elapsed >= start && elapsed < end);
+    if (activeWindow !== this.merchantWindow) {
+      this.view.removeEventObject(this.model.merchant?.object);
+      this.model.merchant = null;
+      this.merchantWindow = activeWindow;
+    }
+    if (activeWindow >= 0 && !this.model.merchant) {
+      const point = this.findEventSpot(17, 29);
+      const object = point && this.view.addEventObject('merchant', point.x, point.z);
+      if (object) this.model.merchant = { ...point, object, reentryLocked: false, age: 0 };
+    }
+    const merchant = this.model.merchant;
+    if (merchant) {
+      merchant.age += delta;
+      this.view.updateEventObject(merchant.object, 'merchant', merchant.age);
+      const distance = Math.hypot(this.view.camera.position.x - merchant.x, this.view.camera.position.z - merchant.z);
+      if (distance > 4) merchant.reentryLocked = false;
+      if (distance < 2.4 && !merchant.reentryLocked) {
+        this.model.phase = 'merchant';
+        this.releasePointer();
+        this.view.showRunMerchant(this.model);
+        return;
+      }
+    }
+    for (const item of [...this.model.pickups]) {
+      item.age += delta;
+      this.view.updateEventObject(item.object, item.kind, item.age);
+      const distance = Math.hypot(this.view.camera.position.x - item.x, this.view.camera.position.z - item.z);
+      if (item.age < item.lifetime && distance > (item.kind === 'chest' ? 2.4 : 1.6)) continue;
+      this.view.removeEventObject(item.object);
+      this.model.pickups.splice(this.model.pickups.indexOf(item), 1);
+      if (item.age >= item.lifetime) continue;
+      if (item.kind === 'bandage') this.model.health = Math.min(this.model.maxHealth, this.model.health + item.value);
+      else {
+        const coins = Math.min(999, Math.round(item.value * this.model.attributes().fortune));
+        this.model.coins += coins;
+        this.menuModel.addCoins(coins);
+      }
+      this.view.showPickupMessage(item.kind === 'bandage' ? `BANDAGEM · +${item.value} VIDA` : `TESOURO · +${item.value} MOEDAS`);
+    }
+  }
+
+  merchantPrice(id) { return { whip: 8, health: 12, speed: 10 }[id] * (1 + this.model.runShopPurchases[id]); }
+
+  buyFromMerchant(id) {
+    if (this.model.phase !== 'merchant' || !['whip', 'health', 'speed'].includes(id)) return;
+    const price = this.merchantPrice(id);
+    if (this.model.coins < price) return;
+    this.model.coins -= price;
+    this.model.runShopPurchases[id]++;
+    if (id === 'whip') this.model.upgrades.damage++;
+    if (id === 'speed') this.model.upgrades.speed++;
+    if (id === 'health') this.model.health = Math.min(this.model.maxHealth, this.model.health + 25);
+    this.view.showRunMerchant(this.model);
+  }
+
+  leaveMerchant() {
+    if (this.model.phase !== 'merchant') return;
+    this.model.merchant.reentryLocked = true;
+    this.model.phase = 'playing';
+    this.view.hideRunMerchant();
+    this.start();
+  }
+
   collectLoot(delta) {
     const player = this.view.camera.position;
     for (const item of [...this.model.loot]) {
-      if (Math.hypot(player.x - item.x, player.z - item.z) < 3.5) {
+      if (Math.hypot(player.x - item.x, player.z - item.z) < this.model.attributes().magnet) {
         this.view.removeLoot(item.object);
         this.model.loot.splice(this.model.loot.indexOf(item), 1);
-        if (item.kind === 'coin') this.model.coins += item.value;
+        if (item.kind === 'coin') {
+          const coins = Math.max(1, Math.round(item.value * this.model.attributes().fortune));
+          this.model.coins += coins;
+          this.menuModel.addCoins(coins);
+        }
         else this.model.addExperience(item.value);
         if (this.model.phase === 'upgrade') {
           this.view.showCards(this.model.cardOffers);

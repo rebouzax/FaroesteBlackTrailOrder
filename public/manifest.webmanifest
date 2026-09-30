@@ -1,0 +1,13 @@
+{
+  "id": "./",
+  "name": "Faroeste Black Trail Order",
+  "short_name": "Black Trail",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#10192b",
+  "theme_color": "#10192b",
+  "icons": [{"src":"app-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]
+}

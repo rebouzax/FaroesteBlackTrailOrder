@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 400" role="img" aria-label="Chicote de João Vaqueiro">
+  <defs><radialGradient id="g"><stop stop-color="#73573d"/><stop offset="1" stop-color="#121a2a"/></radialGradient><linearGradient id="leather" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d3a063"/><stop offset=".48" stop-color="#703c27"/><stop offset="1" stop-color="#211719"/></linearGradient></defs>
+  <rect width="300" height="400" fill="url(#g)"/>
+  <path d="M23 346h254M42 42h216" stroke="#b18b5d" opacity=".42"/>
+  <path d="M145 306C56 304 35 196 70 138c39-66 169-52 178 45 7 80-91 117-151 79-44-29-32-100 7-119 43-22 105 7 111 53 5 43-37 72-69 56-22-11-21-43-4-55" fill="none" stroke="#150d0d" stroke-width="21" stroke-linecap="round"/>
+  <path d="M145 306C56 304 35 196 70 138c39-66 169-52 178 45 7 80-91 117-151 79-44-29-32-100 7-119 43-22 105 7 111 53 5 43-37 72-69 56-22-11-21-43-4-55" fill="none" stroke="url(#leather)" stroke-width="14" stroke-linecap="round"/>
+  <path d="M146 307l38 44" stroke="#0e0c0e" stroke-width="22" stroke-linecap="round"/>
+  <path d="M146 307l38 44" stroke="#8c5d3a" stroke-width="14" stroke-linecap="round"/>
+  <path d="M153 310l31 35" stroke="#d7a879" stroke-width="2" stroke-dasharray="3 5"/>
+  <path d="M135 196c-10-20 12-37 25-30" fill="none" stroke="#e3bb79" stroke-width="3" opacity=".7"/>
+  <circle cx="185" cy="352" r="7" fill="#c1a074"/>
+  <path d="M42 365h216" stroke="#b18b5d" opacity=".42"/>
+</svg>
