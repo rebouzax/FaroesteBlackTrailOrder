@@ -8,6 +8,9 @@ const BOSSES = [
   { at: 360, type: 'fireChupacabra', visual: 'dog', hp: 700, damage: 27, speed: 1.65, xp: 480 },
   { at: 660, type: 'shadowMarshal', visual: 'marshal', hp: 950, damage: 34, speed: 2.35, xp: 650 },
 ];
+const BOSS_COINS = Object.fromEntries(
+  [BOSSES, MINE_BOSSES].flatMap(bosses => bosses.map((boss, index) => [boss.type, [100, 300, 700][index]]))
+);
 const STATS = {
   bat: { hp: 10, damage: 10, armor: 0, speed: 2.5, xp: 10 },
   dog: { hp: 35, damage: 14, armor: 2, speed: 3.5, xp: 20 },
@@ -459,7 +462,7 @@ export class GameViewModel {
     }
     this.dropLoot(enemy.x, enemy.z, 'xp', enemy.xp);
     const chance = enemy.boss ? 1 : { bat: 0.12, dog: 0.3, skeleton: 0.22 }[enemy.type] ?? 0.15;
-    if (Math.random() < chance) this.dropLoot(enemy.x + 0.5, enemy.z, 'coin', enemy.boss ? 10 : 1);
+    if (Math.random() < chance) this.dropLoot(enemy.x + 0.5, enemy.z, 'coin', enemy.boss ? (BOSS_COINS[enemy.type] ?? 100) : 15);
   }
 
   missionEvent(kind,amount){
