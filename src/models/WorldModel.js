@@ -137,7 +137,7 @@ export class WorldModel {
     this.visualTime += delta;
     // O relógio da campanha espera o confronto com qualquer chefe ativo.
     if (!this.enemies.some(enemy => enemy.boss)) this.elapsed += delta;
-    if (this.mode === 'campaign' && this.elapsed >= 900) {
+    if (this.mode === 'campaign' && this.elapsed >= 900 && this.bossesSpawned.size === 3 && !this.enemies.some(enemy=>enemy.boss)) {
       this.phase = 'victory';
       this.notify();
     }

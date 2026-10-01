@@ -1,5 +1,6 @@
 import './styles.css';
 import './menu-fit.css';
+import './dark-frontier.css';
 import { GameApplication } from './app/GameApplication.js';
 
 const game = new GameApplication(document.querySelector('#game'));

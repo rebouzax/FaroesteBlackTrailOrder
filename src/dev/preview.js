@@ -5,6 +5,11 @@ import { placeAsset } from '../views/AssetPlacement.js';
 export async function preview(game) {
   const { view,model }=game;
   const kind=new URLSearchParams(location.search).get('preview');
+  if(kind==='menus'){
+    const screen=new URLSearchParams(location.search).get('screen');
+    if(['home','modes','champion','map','arsenal','bestiary','merchant'].includes(screen))game.menuViewModel.navigate(screen);
+    return;
+  }
   await Promise.all([view.assetsReady,view.weaponReady]);
   model.startRun({champion:kind==='revolver'?'maria':'joao'});
   model.phase='preview';view.hideMenu();view.setChampion(model.champion);
@@ -17,6 +22,12 @@ export async function preview(game) {
     if(kind==='bento'){
       bento=view.addEventObject('merchant',0,0);
       view.camera.position.set(0,1.5,4.8);view.camera.lookAt(0,1.1,0);
+    }else if(kind==='enemies'){
+      const all=['snake','scorpion','spider','miner','zombie','ghost','ghoul','wendigo'];
+      const chosen=new URLSearchParams(location.search).get('actor');
+      const names=all.includes(chosen)?[chosen]:all;
+      names.forEach((name,i)=>{const actor=view.addEnemy(name,(i-(names.length-1)/2)*3,0,0);if(actor)actor.rotation.y=Number(new URLSearchParams(location.search).get('yaw'))||0;});
+      view.camera.position.set(0,names.length===1?2.8:2.5,names.length===1?4:15);view.camera.lookAt(0,names.length===1?.8:1.2,0);
     }else{
       const names=['psx_abandoned_house.glb','psx_abandoned_church.glb','psx_old_abandoned_mansion.glb','low_poly_western_saloon.glb'];
       for(let i=0;i<names.length;i++){

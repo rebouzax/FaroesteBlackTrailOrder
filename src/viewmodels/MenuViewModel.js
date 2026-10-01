@@ -5,7 +5,7 @@ export class MenuViewModel {
     this.view = view;
     this.gameViewModel = gameViewModel;
     this.gameRoot = gameRoot;
-    this.page = 0; this.search = ''; this.filter = 'all';
+    this.page = 0; this.search = ''; this.filter = 'unlocked';
   }
 
   mount() {
@@ -16,6 +16,8 @@ export class MenuViewModel {
   navigate(screen) {
     if (['arsenal', 'bestiary', 'merchant'].includes(screen)) this.model.returnScreen = this.model.screen;
     this.model.screen = screen;
+    if(!this.model.heroUnlocked(this.model.champion))this.model.champion='joao';
+    if(!this.model.stageUnlocked(this.model.map))this.model.map='desert';
     this.page = 0;
     this.view.render();
   }
@@ -42,8 +44,8 @@ export class MenuViewModel {
       this.navigate('champion');
       return;
     }
-    if(action.startsWith('stage:') && ['desert','mine'].includes(action.slice(6))){this.model.map=action.slice(6);this.view.render();return;}
-    if (action.startsWith('champion:') && CHAMPIONS[action.slice(9)]) { this.model.champion = action.slice(9); this.view.render(); return; }
+    if(action.startsWith('stage:') && this.model.stageUnlocked(action.slice(6))){this.model.map=action.slice(6);this.view.render();return;}
+    if (action.startsWith('champion:') && CHAMPIONS[action.slice(9)] && this.model.heroUnlocked(action.slice(9))) { this.model.champion = action.slice(9); this.view.render(); return; }
     if (action.startsWith('deck:')) { this.model.toggleDeck(action.slice(5)); this.view.render(); return; }
     if (action.startsWith('buy:')) { this.model.buy(action.slice(4)); this.view.render(); return; }
     if (action.startsWith('setting:')) {
@@ -56,6 +58,7 @@ export class MenuViewModel {
       return;
     }
     if (action === 'play') {
+      if(!this.model.stageUnlocked(this.model.map)||!this.model.heroUnlocked(this.model.champion))return;
       this.gameViewModel.start({ mode: this.model.mode, champion: this.model.champion, map: this.model.map });
       return;
     }

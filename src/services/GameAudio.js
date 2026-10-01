@@ -1,7 +1,8 @@
+const AUDIO_BASE=import.meta.env?.BASE_URL||'/';
 export class GameAudio {
   constructor() {
     this.buffers = {}; this.stepClock = 0; this.musicOffset = 0; this.mode = 'menu'; this.musicPaused = false;
-    this.menuTrack = new Audio(`${import.meta.env.BASE_URL}audio/menu-seven-graves-west.mp3`);
+    this.menuTrack = new Audio(`${AUDIO_BASE}audio/menu-seven-graves-west.mp3`);
     this.menuTrack.loop = true; this.menuTrack.volume = .33; this.menuTrack.preload = 'metadata';
     this.menuTrack.play().catch(() => {});
   }
@@ -18,7 +19,7 @@ export class GameAudio {
         this.musicGain.gain.value = .32;
         this.musicGain.connect(this.context.destination);
         for (const name of ['shot', 'glass', 'fire', 'level']) {
-          fetch(`${import.meta.env.BASE_URL}audio/${name}.wav`).then(response => response.arrayBuffer())
+          fetch(`${AUDIO_BASE}audio/${name}.wav`).then(response => response.arrayBuffer())
             .then(data => this.context.decodeAudioData(data)).then(buffer => { this.buffers[name] = buffer; }).catch(() => {});
         }
         // Distinct heel, leather sole and loose grit for each footfall.
@@ -44,24 +45,26 @@ export class GameAudio {
     if (mode !== this.mode) { this.stopStageMusic(); this.musicOffset = 0; }
     this.mode = mode; this.musicPaused = paused;
     if (mode !== 'menu' || paused) this.menuTrack.pause();
-    if (mode !== 'stage' || paused) this.stopStageMusic();
+    if (mode === 'menu' || paused) this.stopStageMusic();
     this.startMusic();
   }
   startMusic() {
     if (this.disposed || this.musicPaused) return;
     if (this.mode === 'menu') { this.menuTrack.play().catch(() => {}); return; }
     if (!this.context || this.context.state !== 'running' || this.musicSource) return;
-    if (!this.stageBuffer) {
-      if (!this.musicLoading) this.musicLoading = fetch(`${import.meta.env.BASE_URL}audio/desert-iron-boots.mp3`)
+    this.musicBuffers ||= {}; this.musicLoads ||= {};
+    const key=this.mode==='mine'?'mine':'desert';
+    if (!this.musicBuffers[key]) {
+      if (!this.musicLoads[key]) this.musicLoads[key] = fetch(`${AUDIO_BASE}audio/${key==='mine'?'mine-prospector':'desert-iron-boots'}.mp3`)
         .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.arrayBuffer(); })
         .then(data => this.context.decodeAudioData(data)).then(buffer => {
-          this.stageBuffer = buffer; this.startMusic();
-        }).catch(error => console.warn('Não foi possível carregar a música do deserto.', error));
+          this.musicBuffers[key] = buffer; this.startMusic();
+        }).catch(error => {delete this.musicLoads[key];console.warn('Não foi possível carregar a música da fase.',error);});
       return;
     }
     const source = this.context.createBufferSource();
-    source.buffer = this.stageBuffer; source.loop = true;
-    source.loopStart = 0; source.loopEnd = Math.min(166, this.stageBuffer.duration);
+    source.buffer = this.musicBuffers[key]; source.loop = true;
+    source.loopStart = 0; source.loopEnd = Math.min(166, source.buffer.duration);
     source.connect(this.musicGain);
     source.start(0, this.musicOffset % source.loopEnd);
     this.musicStartedAt = this.context.currentTime; this.musicSource = source;

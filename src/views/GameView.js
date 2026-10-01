@@ -1,4 +1,5 @@
 import { MineStage } from './MineStage.js';
+import { ENEMY_VISUAL_YAW } from '../config/enemyFacing.js';
 import { STAGES } from '../config/stages.js';
 import { GameAudio } from '../services/GameAudio.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
@@ -272,13 +273,19 @@ export class GameView {
     this.pickupMessageExpires = performance.now() + 2500;
   }
 
+  updateMissionHUD(mission,elapsed){
+    if(!this.missionHUD){this.missionHUD=document.createElement('aside');this.missionHUD.className='mission-hud';this.missionHUD.setAttribute('aria-live','polite');this.root.append(this.missionHUD);}
+    this.missionHUD.hidden=!mission;
+    if(mission)this.missionHUD.textContent=`${mission.title} · ${mission.count}/${mission.target} · ${Math.max(0,Math.ceil(mission.at+mission.duration-elapsed))} s`;
+  }
+
   showEnd(model) {
     if (this.endShown) return;
     this.endShown = true;
     this.buttons.end.querySelector('.end-title').textContent = model.phase === 'victory' ? 'A LUA SE PÔS.' : 'A ESTRADA COBROU SEU PREÇO.';
     this.buttons.end.querySelector('.end-copy').textContent = model.phase === 'victory'
-      ? `João atravessou o Deserto dos Condenados. ${model.kills} inimigos ficaram para trás.`
-      : `João resistiu ${Math.floor(model.elapsed / 60)} minutos e derrotou ${model.kills} inimigos.`;
+      ? `${model.hero.name} concluiu ${model.stageName}. ${model.kills} inimigos derrotados. Novas recompensas foram guardadas.`
+      : `${model.hero.name} resistiu ${Math.floor(model.elapsed / 60)} minutos e derrotou ${model.kills} inimigos. Conquistas obtidas foram guardadas.`;
     this.buttons.end.hidden = false;
   }
 
@@ -788,7 +795,7 @@ export class GameView {
       });
       const flight = type === 'bat';
       const desired = {snake:.65,scorpion:.6,spider:.7}[type] || (type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3);
-      const normalized = placeAsset(scene, { size:desired,dimension:flight?'width':'height' });
+      const normalized = placeAsset(scene, { size:desired,dimension:flight?'width':'height',yaw:ENEMY_VISUAL_YAW[type]||0 });
       if(flight) normalized.position.y -= new THREE.Box3().setFromObject(normalized).getSize(new THREE.Vector3()).y/2;
       const wrapper = new THREE.Group();wrapper.add(normalized);
       this.enemyTemplates.set(type, { scene:wrapper, animations });
@@ -826,7 +833,11 @@ export class GameView {
       if (!child.isMesh || child.isSkinnedMesh) return;
       child.geometry = child.geometry.clone();
       child.userData.proceduralGeometry = true;child.frustumCulled = false;
-      const position=child.geometry.attributes.position;
+      const imported=child.geometry.attributes.position;
+      const values=new Float32Array(imported.count*3);
+      for(let i=0;i<imported.count;i++){values[i*3]=imported.getX(i);values[i*3+1]=imported.getY(i);values[i*3+2]=imported.getZ(i);}
+      const position=new THREE.BufferAttribute(values,3);
+      child.geometry.setAttribute('position',position);
       position.setUsage(THREE.DynamicDrawUsage);
       child.geometry.computeBoundingBox();
       const box=child.geometry.boundingBox, extent=box.getSize(new THREE.Vector3());
@@ -1205,7 +1216,7 @@ export class GameView {
   }
 
   update(delta, model) {
-    this.audio.syncMusic(model.phase === 'menu' ? 'menu' : 'stage', document.hidden || (model.phase === 'playing' && !model.isLocked) || ['defeat','victory'].includes(model.phase));
+    this.audio.syncMusic(model.phase === 'menu' ? 'menu' : (model.stage||'desert'), document.hidden || (model.phase === 'playing' && !model.isLocked) || ['defeat','victory'].includes(model.phase));
     this.mineStage?.update(model.visualTime);
     this.audio.footsteps(delta, model.walking, model.attributes().speed);
     this.abilityEffects.update(this.viewModel.abilitySystem, model, this.camera.position);

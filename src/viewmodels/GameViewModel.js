@@ -1,3 +1,4 @@
+import { MISSIONS } from '../config/campaign.js';
 import { STAGES, MINE_BOSSES } from '../config/stages.js';
 import { AbilitySystem } from '../systems/AbilitySystem.js';
 const LIMIT = 238;
@@ -103,14 +104,16 @@ export class GameViewModel {
     this.view.audio.unlock();
     this.view.controls.pointerSpeed = this.sensitivity();
     if (this.model.phase === 'menu') {
-      if (!selection) return;
+      if (!selection || !this.menuModel.heroUnlocked(selection.champion) || !this.menuModel.stageUnlocked(selection.map)) return;
       if(this.starting)return;
       this.starting=true;
       if(this.touchDevice)this.requestLandscape();
       await this.view.assetsReady;
       this.view.selectStage(selection.map);
       this.starting=false;
-      this.model.deck = [...this.menuModel.profile.deck];
+      this.model.deck = this.menuModel.profile.deck.filter(id=>this.menuModel.cardUnlocked(id));
+      this.runMissions=(MISSIONS[selection.map]||[]).map(m=>({...m,count:0,completed:false,failed:false}));
+      this.runBossKills=new Set();
       this.model.startRun(selection, this.menuModel.profile.purchases);
       this.view.setChampion(this.model.champion);
       this.view.hideMenu();
@@ -200,7 +203,9 @@ export class GameViewModel {
     let active = this.model.isLocked && this.model.phase === 'playing' && !this.isPortraitBlocked();
     if (active) {
       this.model.updateTime(delta);
+      this.updateMissions();
       if (this.model.phase === 'victory') {
+        if(this.model.mode==='campaign' && this.runBossKills.size===3)this.menuModel.clearStage(this.model.stage);
         this.releasePointer();
       } else {
         this.movePlayer(delta);
@@ -447,10 +452,29 @@ export class GameViewModel {
     this.model.kills += 1;
     const rank = this.model.abilities.soulHarvest;
     if (rank) this.model.health = Math.min(this.model.maxHealth, this.model.health + Math.min(4, rank + 1));
-    this.menuModel.discover(enemy.type);
+    if(this.model.mode==='campaign'){
+      this.menuModel.discover(enemy.type);
+      this.missionEvent(enemy.type,1);
+      if(enemy.boss){this.runBossKills.add(enemy.type);this.menuModel.defeatBoss(enemy.type);this.view.showPickupMessage('Chefe derrotado · recompensa desbloqueada');}
+    }
     this.dropLoot(enemy.x, enemy.z, 'xp', enemy.xp);
     const chance = enemy.boss ? 1 : { bat: 0.12, dog: 0.3, skeleton: 0.22 }[enemy.type] ?? 0.15;
     if (Math.random() < chance) this.dropLoot(enemy.x + 0.5, enemy.z, 'coin', enemy.boss ? 10 : 1);
+  }
+
+  missionEvent(kind,amount){
+    if(this.model.mode!=='campaign')return;
+    for(const mission of this.runMissions||[]){
+      if(mission.completed||mission.failed||mission.kind!==kind||this.model.elapsed<mission.at||this.model.elapsed>mission.at+mission.duration)continue;
+      mission.count=Math.min(mission.target,mission.count+amount);
+      if(mission.count===mission.target){mission.completed=true;this.menuModel.completeMission(mission.id);this.view.showPickupMessage('Submissão cumprida · novas recompensas');}
+    }
+  }
+  updateMissions(){
+    if(this.model.mode!=='campaign')return;
+    for(const mission of this.runMissions||[])if(!mission.completed&&this.model.elapsed>mission.at+mission.duration)mission.failed=true;
+    const active=this.runMissions?.find(m=>!m.completed&&!m.failed&&this.model.elapsed>=m.at&&this.model.elapsed<=m.at+m.duration);
+    this.view.updateMissionHUD(active,this.model.elapsed);
   }
 
   dropLoot(x, z, kind, value) {
@@ -531,6 +555,7 @@ export class GameViewModel {
       else {
         const coins = Math.min(999, Math.round(item.value * this.model.attributes().fortune));
         this.model.coins += coins;
+        this.missionEvent('coins',coins);
         this.menuModel.addCoins(coins);
       }
       this.view.showPickupMessage(item.kind === 'bandage' ? `BANDAGEM · +${item.value} VIDA` : `TESOURO · +${item.value} MOEDAS`);
@@ -568,6 +593,7 @@ export class GameViewModel {
         if (item.kind === 'coin') {
           const coins = Math.max(1, Math.round(item.value * this.model.attributes().fortune));
           this.model.coins += coins;
+          this.missionEvent('coins',coins);
           this.menuModel.addCoins(coins);
         }
         else this.model.addExperience(item.value);

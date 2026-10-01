@@ -1,0 +1,660 @@
+[
+  {
+    "source": "werebear.blend",
+    "role": "boss",
+    "futureCommonEnemyStages": [
+      3,
+      4
+    ],
+    "spawnEnabled": false,
+    "status": "source-inspected",
+    "license": "user-supplied; unspecified",
+    "sha256": "eeb5a81bf7878fa462bd89c2af70aee3f2f99989a85ecbfb74363f43100ac513",
+    "meshes": [
+      {
+        "name": "body",
+        "vertices": 794,
+        "dimensions": [
+          1.9706,
+          2.714,
+          1.0077
+        ]
+      },
+      {
+        "name": "RenderPlatform.001",
+        "vertices": 0,
+        "dimensions": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "RenderPlatform",
+        "vertices": 4,
+        "dimensions": [
+          20.0009,
+          20.0009,
+          0.0
+        ]
+      }
+    ],
+    "rigs": [
+      {
+        "name": "Armature",
+        "bones": 35
+      }
+    ],
+    "actions": [
+      {
+        "name": "Action",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.001",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.002",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.003",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.004",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.005",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.006",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.007",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.008",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.009",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.010",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.011",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.012",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.013",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.014",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      },
+      {
+        "name": "Action.015",
+        "frames": [
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "textures": [
+      {
+        "name": "orc_shield.png",
+        "packed": true,
+        "exists": false,
+        "localMatch": null
+      },
+      {
+        "name": "werebear_texture.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": null
+      }
+    ]
+  },
+  {
+    "source": "TheMobileCactus.blend",
+    "role": "boss",
+    "futureCommonEnemyStages": [
+      3,
+      4
+    ],
+    "spawnEnabled": false,
+    "status": "source-inspected",
+    "license": "user-supplied; unspecified",
+    "sha256": "b20a59272737a8b88d031250ca5ce93dba260b1f8a7bf2fa90774aa1df0788ac",
+    "meshes": [
+      {
+        "name": "TheMobileCactus",
+        "vertices": 535,
+        "dimensions": [
+          6.1628,
+          2.5508,
+          7.1053
+        ]
+      }
+    ],
+    "rigs": [
+      {
+        "name": "Armature",
+        "bones": 28
+      }
+    ],
+    "actions": [],
+    "textures": [
+      {
+        "name": "Diffuse_256x",
+        "packed": true,
+        "exists": true,
+        "localMatch": "Diffuse_256x.png"
+      }
+    ]
+  },
+  {
+    "source": "gob_bod4_non5_rig3_a10.blend",
+    "role": "boss",
+    "futureCommonEnemyStages": [
+      3,
+      4
+    ],
+    "spawnEnabled": false,
+    "status": "source-inspected",
+    "license": "user-supplied; unspecified",
+    "sha256": "41d4add1ea27d82e9df2cc46337eb49e66dd781885528d7ad1e9e54deddaebaf",
+    "meshes": [
+      {
+        "name": "Cube",
+        "vertices": 652,
+        "dimensions": [
+          6.4092,
+          11.6318,
+          13.7907
+        ]
+      }
+    ],
+    "rigs": [
+      {
+        "name": "metarig",
+        "bones": 40
+      }
+    ],
+    "actions": [
+      {
+        "name": "Death_FromHover",
+        "frames": [
+          1.0,
+          39.0
+        ]
+      },
+      {
+        "name": "Death_FromIdle1",
+        "frames": [
+          1.0,
+          53.0
+        ]
+      },
+      {
+        "name": "Flinch_Flying",
+        "frames": [
+          1.0,
+          105.0
+        ]
+      },
+      {
+        "name": "Flinch_Idle",
+        "frames": [
+          1.0,
+          36.0
+        ]
+      },
+      {
+        "name": "Fly_Land1",
+        "frames": [
+          1.0,
+          37.0
+        ]
+      },
+      {
+        "name": "Fly_Take-off1",
+        "frames": [
+          1.0,
+          39.0
+        ]
+      },
+      {
+        "name": "FlyTest1",
+        "frames": [
+          1.0,
+          61.0
+        ]
+      },
+      {
+        "name": "FlyTest2",
+        "frames": [
+          1.0,
+          157.0
+        ]
+      },
+      {
+        "name": "Hover_Attack1",
+        "frames": [
+          1.0,
+          105.0
+        ]
+      },
+      {
+        "name": "Hover_Attack2",
+        "frames": [
+          1.0,
+          105.0
+        ]
+      },
+      {
+        "name": "Hover_Long1",
+        "frames": [
+          1.0,
+          105.0
+        ]
+      },
+      {
+        "name": "IdleAnimation1",
+        "frames": [
+          1.0,
+          65.0
+        ]
+      },
+      {
+        "name": "IdlePose1",
+        "frames": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "name": "Run1",
+        "frames": [
+          1.0,
+          55.0
+        ]
+      },
+      {
+        "name": "Run2",
+        "frames": [
+          1.0,
+          55.0
+        ]
+      },
+      {
+        "name": "RunStart",
+        "frames": [
+          1.0,
+          11.0
+        ]
+      },
+      {
+        "name": "RunStop",
+        "frames": [
+          1.0,
+          37.0
+        ]
+      },
+      {
+        "name": "Silly1",
+        "frames": [
+          1.0,
+          65.0
+        ]
+      },
+      {
+        "name": "Sleeping",
+        "frames": [
+          1.0,
+          101.0
+        ]
+      },
+      {
+        "name": "T-Pose",
+        "frames": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "name": "WakeUp",
+        "frames": [
+          1.0,
+          108.0
+        ]
+      }
+    ],
+    "textures": [
+      {
+        "name": "Texture_SkullFlesh1.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": null
+      }
+    ]
+  },
+  {
+    "source": "wizard2.blend",
+    "role": "boss",
+    "futureCommonEnemyStages": [
+      3,
+      4
+    ],
+    "spawnEnabled": false,
+    "status": "source-inspected",
+    "license": "user-supplied; unspecified",
+    "sha256": "16f8eb1c4004cfb7e63e5b839469d97f73efff07949f93343be9e2a5e1c59657",
+    "meshes": [
+      {
+        "name": "wizard",
+        "vertices": 1317,
+        "dimensions": [
+          12.9623,
+          9.8283,
+          4.6522
+        ]
+      }
+    ],
+    "rigs": [],
+    "actions": [],
+    "textures": [
+      {
+        "name": "emition",
+        "packed": false,
+        "exists": true,
+        "localMatch": "emition.png"
+      },
+      {
+        "name": "normal",
+        "packed": false,
+        "exists": true,
+        "localMatch": "normal_low.png"
+      },
+      {
+        "name": "sorcerer-spider_0.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": null
+      },
+      {
+        "name": "texture",
+        "packed": false,
+        "exists": true,
+        "localMatch": "texture_low.png"
+      }
+    ]
+  },
+  {
+    "source": "cerberus_v002.blend",
+    "role": "boss",
+    "futureCommonEnemyStages": [
+      3,
+      4
+    ],
+    "spawnEnabled": false,
+    "status": "source-inspected",
+    "license": "user-supplied; unspecified",
+    "sha256": "abd30c21089f64e55e603192614e8b5c6c53839eebd851cf89b04edd840b649f",
+    "meshes": [
+      {
+        "name": "Cerberus",
+        "vertices": 350,
+        "dimensions": [
+          9.5801,
+          18.4309,
+          9.6099
+        ]
+      }
+    ],
+    "rigs": [
+      {
+        "name": "Armature",
+        "bones": 48
+      }
+    ],
+    "actions": [
+      {
+        "name": "Attack",
+        "frames": [
+          1.0,
+          41.0
+        ]
+      },
+      {
+        "name": "die",
+        "frames": [
+          1.0,
+          35.0
+        ]
+      },
+      {
+        "name": "hit",
+        "frames": [
+          1.0,
+          21.0
+        ]
+      },
+      {
+        "name": "Idle",
+        "frames": [
+          1.0,
+          21.0
+        ]
+      },
+      {
+        "name": "Walk",
+        "frames": [
+          1.0,
+          31.0
+        ]
+      }
+    ],
+    "textures": [
+      {
+        "name": "cerberus_texture.png",
+        "packed": false,
+        "exists": true,
+        "localMatch": "cerberus_texture.png"
+      }
+    ]
+  },
+  {
+    "source": "ChainedDemon.blend",
+    "role": "boss",
+    "futureCommonEnemyStages": [
+      3,
+      4
+    ],
+    "spawnEnabled": false,
+    "status": "source-inspected",
+    "license": "user-supplied; unspecified",
+    "sha256": "e653981f918120614d70a4cd3ddc2d976985d8bdde65f3cca5304d1eada151fc",
+    "meshes": [
+      {
+        "name": "ChainedDemon",
+        "vertices": 739,
+        "dimensions": [
+          20.2006,
+          4.4693,
+          12.9809
+        ]
+      }
+    ],
+    "rigs": [
+      {
+        "name": "Rig",
+        "bones": 73
+      }
+    ],
+    "actions": [
+      {
+        "name": "Action",
+        "frames": [
+          1.0,
+          175.0
+        ]
+      },
+      {
+        "name": "EmptyAction",
+        "frames": [
+          1.0,
+          100.0
+        ]
+      }
+    ],
+    "textures": [
+      {
+        "name": "Material Diffuse Color",
+        "packed": true,
+        "exists": false,
+        "localMatch": null
+      },
+      {
+        "name": "Material Diffuse Color.png",
+        "packed": false,
+        "exists": true,
+        "localMatch": "diffuse.png"
+      }
+    ]
+  },
+  {
+    "source": "low_poly_raptor.blend",
+    "role": "boss",
+    "futureCommonEnemyStages": [
+      3,
+      4
+    ],
+    "spawnEnabled": false,
+    "status": "source-inspected",
+    "license": "user-supplied; unspecified",
+    "sha256": "a133a511b0048bb94f7a5825d68476f8acf722172e56c7d52fa496b46739ffca",
+    "meshes": [
+      {
+        "name": "raptor_feathered",
+        "vertices": 501,
+        "dimensions": [
+          0.4012,
+          2.4627,
+          0.9526
+        ]
+      },
+      {
+        "name": "raptor_scaly",
+        "vertices": 372,
+        "dimensions": [
+          1.0361,
+          1.2085,
+          0.8939
+        ]
+      }
+    ],
+    "rigs": [
+      {
+        "name": "raptor_feathered_skeletonn",
+        "bones": 41
+      },
+      {
+        "name": "raptor_skeleton",
+        "bones": 41
+      }
+    ],
+    "actions": [],
+    "textures": [
+      {
+        "name": "raptor_feathered_alpha_tex1.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": "raptor_feathered_alpha_tex1.png"
+      },
+      {
+        "name": "raptor_feathered_tex1.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": "raptor_feathered_tex1.png"
+      },
+      {
+        "name": "raptor_scaly_brown.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": "raptor_scaly_tex1.png"
+      },
+      {
+        "name": "raptor_scaly_tex2.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": "raptor_scaly_tex2.png"
+      },
+      {
+        "name": "raptor_scaly_warpaint_mask.png",
+        "packed": false,
+        "exists": false,
+        "localMatch": "raptor_scaly_warpaint_mask.png"
+      }
+    ]
+  }
+]
