@@ -1,5 +1,10 @@
 export class GameAudio {
-  constructor() { this.buffers = {}; this.stepClock = 0; }
+  constructor() {
+    this.buffers = {}; this.stepClock = 0; this.musicOffset = 0; this.mode = 'menu'; this.musicPaused = false;
+    this.menuTrack = new Audio(`${import.meta.env.BASE_URL}audio/menu-seven-graves-west.mp3`);
+    this.menuTrack.loop = true; this.menuTrack.volume = .33; this.menuTrack.preload = 'metadata';
+    this.menuTrack.play().catch(() => {});
+  }
   unlock() {
     try {
       if (!this.context) {
@@ -9,17 +14,65 @@ export class GameAudio {
         this.gain = this.context.createGain();
         this.gain.gain.value = 0.55;
         this.gain.connect(this.context.destination);
+        this.musicGain = this.context.createGain();
+        this.musicGain.gain.value = .32;
+        this.musicGain.connect(this.context.destination);
         for (const name of ['shot', 'glass', 'fire', 'level']) {
           fetch(`${import.meta.env.BASE_URL}audio/${name}.wav`).then(response => response.arrayBuffer())
             .then(data => this.context.decodeAudioData(data)).then(buffer => { this.buffers[name] = buffer; }).catch(() => {});
         }
-        const noise = this.context.createBuffer(1, this.context.sampleRate * 0.2, this.context.sampleRate);
-        const samples = noise.getChannelData(0);
-        for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * Math.exp(-i / samples.length * 7);
-        this.buffers.step = noise;
+        // Distinct heel, leather sole and loose grit for each footfall.
+        this.bootSteps=Array.from({length:8},(_,variant)=>{
+          const rate=this.context.sampleRate,buffer=this.context.createBuffer(1,rate*.32,rate),out=buffer.getChannelData(0);
+          let low=0;
+          for(let i=0;i<out.length;i++){
+            const t=i/rate,n=Math.random()*2-1;low=low*.91+n*.09;
+            const heel=Math.exp(-t*70)*Math.sin(2*Math.PI*(82+variant*2)*t)*.32;
+            const sole=t>.035?Math.exp(-(t-.035)*35)*low*.85:0;
+            const grit=(Math.exp(-t*24)+.45*Math.exp(-Math.pow((t-.13)/.04,2)))*n*.08;
+            out[i]=Math.tanh(heel+sole+grit)*Math.min(1,t*1500)*Math.max(0,1-t/.32);
+          }
+          return buffer;
+        });
       }
-      this.context.resume().catch(() => {});
+      this.context.resume().then(() => this.startMusic()).catch(() => {});
+      if (this.mode === 'menu' && !this.musicPaused) this.menuTrack.play().catch(() => {});
     } catch { /* Browser audio is optional. */ }
+  }
+  syncMusic(mode, paused) {
+    if (mode === this.mode && paused === this.musicPaused) return;
+    if (mode !== this.mode) { this.stopStageMusic(); this.musicOffset = 0; }
+    this.mode = mode; this.musicPaused = paused;
+    if (mode !== 'menu' || paused) this.menuTrack.pause();
+    if (mode !== 'stage' || paused) this.stopStageMusic();
+    this.startMusic();
+  }
+  startMusic() {
+    if (this.disposed || this.musicPaused) return;
+    if (this.mode === 'menu') { this.menuTrack.play().catch(() => {}); return; }
+    if (!this.context || this.context.state !== 'running' || this.musicSource) return;
+    if (!this.stageBuffer) {
+      if (!this.musicLoading) this.musicLoading = fetch(`${import.meta.env.BASE_URL}audio/desert-iron-boots.mp3`)
+        .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.arrayBuffer(); })
+        .then(data => this.context.decodeAudioData(data)).then(buffer => {
+          this.stageBuffer = buffer; this.startMusic();
+        }).catch(error => console.warn('Não foi possível carregar a música do deserto.', error));
+      return;
+    }
+    const source = this.context.createBufferSource();
+    source.buffer = this.stageBuffer; source.loop = true;
+    source.loopStart = 0; source.loopEnd = Math.min(166, this.stageBuffer.duration);
+    source.connect(this.musicGain);
+    source.start(0, this.musicOffset % source.loopEnd);
+    this.musicStartedAt = this.context.currentTime; this.musicSource = source;
+  }
+  stopStageMusic() {
+    if (!this.musicSource) return;
+    this.musicOffset = (this.musicOffset + this.context.currentTime - this.musicStartedAt) % this.musicSource.loopEnd;
+    this.musicSource.stop(); this.musicSource.disconnect(); this.musicSource = null;
+  }
+  dispose() {
+    this.disposed = true; this.menuTrack.pause(); this.stopStageMusic(); this.context?.close();
   }
   play(name, volume = 0.6, rate = 1) {
     const ctx = this.context;
@@ -36,16 +89,26 @@ export class GameAudio {
     this.stepClock -= delta;
     if (this.stepClock > 0) return;
     this.stepClock = Math.max(0.22, 0.43 * 5 / speed);
-    this.play('step', 0.22, 0.65 + Math.random() * 0.25);
-    const ctx = this.context;
-    if (!ctx || ctx.state !== 'running') return;
-    const oscillator = ctx.createOscillator(), gain = ctx.createGain();
-    oscillator.frequency.setValueAtTime(95, ctx.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-    oscillator.connect(gain); gain.connect(this.gain);
-    oscillator.start(); oscillator.stop(ctx.currentTime + 0.13);
-    oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+    const ctx=this.context;
+    if(!ctx||ctx.state!=='running'||!this.bootSteps)return;
+    this.footIndex=(this.footIndex||0)+1;
+    const source=ctx.createBufferSource(),gain=ctx.createGain(),filter=ctx.createBiquadFilter(),pan=ctx.createStereoPanner();
+    source.buffer=this.bootSteps[(this.footIndex+Math.floor(Math.random()*3))%this.bootSteps.length];
+    source.playbackRate.value=.94+Math.random()*.12;
+    filter.type='lowpass';filter.frequency.value=2400+Math.random()*600;
+    gain.gain.value=.58+Math.random()*.12;pan.pan.value=this.footIndex%2?-.12:.12;
+    source.connect(filter);filter.connect(gain);gain.connect(pan);pan.connect(this.gain);source.start();
+    source.onended=()=>{source.disconnect();filter.disconnect();gain.disconnect();pan.disconnect();};
+  }
+
+  shotgun() {
+    this.play('shot',.85,.72);
+    const ctx=this.context;if(!ctx||ctx.state!=='running')return;
+    const noise=ctx.createBuffer(1,Math.floor(ctx.sampleRate*.48),ctx.sampleRate),data=noise.getChannelData(0);
+    for(let i=0;i<data.length;i++){const t=i/ctx.sampleRate;data[i]=(Math.random()*2-1)*Math.exp(-t*17)*.5+Math.sin(t*2*Math.PI*65)*Math.exp(-t*28)*.3;}
+    const source=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain();
+    source.buffer=noise;filter.type='lowpass';filter.frequency.value=2400;gain.gain.value=.7;
+    source.connect(filter);filter.connect(gain);gain.connect(this.gain);source.start();
+    source.onended=()=>{source.disconnect();filter.disconnect();gain.disconnect();};
   }
 }

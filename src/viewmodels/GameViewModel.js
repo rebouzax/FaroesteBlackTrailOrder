@@ -1,3 +1,4 @@
+import { STAGES, MINE_BOSSES } from '../config/stages.js';
 import { AbilitySystem } from '../systems/AbilitySystem.js';
 const LIMIT = 238;
 const RANGE = 5;
@@ -10,7 +11,11 @@ const STATS = {
   bat: { hp: 10, damage: 10, armor: 0, speed: 2.5, xp: 10 },
   dog: { hp: 35, damage: 14, armor: 2, speed: 3.5, xp: 20 },
   skeleton: { hp: 22, damage: 8, armor: 1, speed: 1.7, xp: 15 },
-  crow: { hp: 18, damage: 9, armor: 0, speed: 3.15, xp: 14 },
+  snake:{hp:15,damage:12,armor:0,speed:2.4,xp:12},
+  scorpion:{hp:25,damage:15,armor:2,speed:1.8,xp:18},
+  spider:{hp:18,damage:10,armor:0,speed:2.8,xp:14},
+  miner:{hp:55,damage:18,armor:2,speed:1.55,xp:32},
+  ghost:{hp:30,damage:16,armor:0,speed:2.2,xp:26},
   zombie: { hp: 36, damage: 12, armor: 1, speed: 1.45, xp: 23 },
   bonewalker: { hp: 31, damage: 11, armor: 1, speed: 1.95, xp: 22 },
   wendigo: { hp: 115, damage: 23, armor: 3, speed: 2.3, xp: 90 },
@@ -82,7 +87,8 @@ export class GameViewModel {
   addBoxCollider(minX, maxX, minZ, maxZ) { this.colliders.push({ kind: 'box', minX, maxX, minZ, maxZ }); }
 
   spotClear(x, z, padding = 0) {
-    if (Math.hypot(x, z) > LIMIT - padding) return false;
+    if(this.model.stage==='mine'){if((x/(38-padding))**2+(z/(76-padding))**2>1)return false;}
+    else if (Math.hypot(x, z) > LIMIT - padding) return false;
     return this.colliders.every(item => item.kind === 'box'
       ? x < item.minX - padding || x > item.maxX + padding || z < item.minZ - padding || z > item.maxZ + padding
       : Math.hypot(x - item.x, z - item.z) >= item.radius + padding);
@@ -93,11 +99,17 @@ export class GameViewModel {
     return Math.max(.2, Math.min(3, Number(this.menuModel.settings[key]) || 1));
   }
 
-  start(selection = null) {
+  async start(selection = null) {
     this.view.audio.unlock();
     this.view.controls.pointerSpeed = this.sensitivity();
     if (this.model.phase === 'menu') {
       if (!selection) return;
+      if(this.starting)return;
+      this.starting=true;
+      if(this.touchDevice)this.requestLandscape();
+      await this.view.assetsReady;
+      this.view.selectStage(selection.map);
+      this.starting=false;
       this.model.deck = [...this.menuModel.profile.deck];
       this.model.startRun(selection, this.menuModel.profile.purchases);
       this.view.setChampion(this.model.champion);
@@ -237,6 +249,16 @@ export class GameViewModel {
 
   spawnWave(delta) {
     const elapsed = this.model.elapsed;
+    if(this.model.stage==='mine'){
+      this.spawnClock-=delta;
+      if(this.spawnClock<=0){
+        this.spawnClock=Math.max(.6,1.7-elapsed/850);
+        const roster=elapsed<90?['snake','scorpion','spider']:elapsed<240?['snake','scorpion','spider','miner','zombie']:['snake','scorpion','spider','miner','zombie','ghost','skeleton'];
+        for(let i=0;i<1+Math.floor(elapsed/240)&&this.model.enemies.length<48;i++)this.spawnEnemy(roster[Math.floor(Math.random()*roster.length)]);
+      }
+      for(const boss of MINE_BOSSES)if(elapsed>=boss.at&&!this.model.bossesSpawned.has(boss.type)&&this.spawnEnemy(boss.type,boss))this.model.bossesSpawned.add(boss.type);
+      return;
+    }
     this.spawnClock -= delta;
     if (this.spawnClock <= 0) {
       this.spawnClock = Math.max(0.55, 1.5 - elapsed / 700);
@@ -263,9 +285,9 @@ export class GameViewModel {
       if (this.extraClock <= 0) {
         this.extraClock = Math.max(3.8, 9 - elapsed / 220);
         if (this.model.enemies.length < 48) {
-          const options = elapsed >= 600 ? ['crow', 'zombie', 'bonewalker', 'snatcher', 'wendigo']
-            : elapsed >= 300 ? ['crow', 'zombie', 'bonewalker', 'snatcher']
-              : ['crow', 'zombie'];
+          const options = elapsed >= 600 ? ['zombie', 'bonewalker', 'snatcher', 'wendigo']
+            : elapsed >= 300 ? ['zombie', 'bonewalker', 'snatcher']
+              : ['zombie'];
           this.spawnEnemy(options[Math.floor(Math.random() * options.length)]);
         }
       }
@@ -282,7 +304,7 @@ export class GameViewModel {
     const point = this.findEventSpot(boss ? 17 : 25, boss ? 22 : 33);
     if (!point) return false;
     const { x, z } = point;
-    const y = visual === 'bat' || visual === 'crow' ? 2.2 + Math.random() * 1.2 : 0;
+    const y = visual === 'bat' ? 2.2 + Math.random() * 1.2 : 0;
     const object = this.view.addEnemy(visual, x, y, z, Boolean(boss));
     if (!object) return false;
     const stats = boss || STATS[type];
@@ -321,7 +343,7 @@ export class GameViewModel {
         else if (this.spotClear(oldX, enemy.z, clearance)) enemy.x = oldX;
         else { enemy.x = oldX; enemy.z = oldZ; }
       }
-      enemy.object.position.set(enemy.x, enemy.y + (['bat', 'crow'].includes(enemy.visual) ? Math.sin(this.model.elapsed * 5 + enemy.phase) * 0.28 : 0), enemy.z);
+      enemy.object.position.set(enemy.x, enemy.y + (enemy.visual === 'bat' ? Math.sin(this.model.elapsed * 5 + enemy.phase) * 0.28 : 0), enemy.z);
       // Os modelos originais têm a frente em +Z, como no Faroeste Survivors.
       enemy.object.rotation.y = Math.atan2(dx, dz);
       this.view.updateEnemy(enemy.object, delta);

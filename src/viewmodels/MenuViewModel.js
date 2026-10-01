@@ -42,6 +42,7 @@ export class MenuViewModel {
       this.navigate('champion');
       return;
     }
+    if(action.startsWith('stage:') && ['desert','mine'].includes(action.slice(6))){this.model.map=action.slice(6);this.view.render();return;}
     if (action.startsWith('champion:') && CHAMPIONS[action.slice(9)]) { this.model.champion = action.slice(9); this.view.render(); return; }
     if (action.startsWith('deck:')) { this.model.toggleDeck(action.slice(5)); this.view.render(); return; }
     if (action.startsWith('buy:')) { this.model.buy(action.slice(4)); this.view.render(); return; }

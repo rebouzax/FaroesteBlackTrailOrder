@@ -1,14 +1,22 @@
+import { STAGES } from '../config/stages.js';
 import { ABILITIES, cardDescription, abilityMaxLevel } from '../config/abilityConfig.js';
 import { CHAMPIONS } from '../config/champions.js';
 const ART = `${import.meta.env.BASE_URL}art/menu/`;
 const CREATURES = [
+  ['snake','Cobra da Mina','Rasteja pelos trilhos.','Ataca junto às pedras.',null],
+  ['scorpion','Escorpião','Habita os veios de ouro.','Carapaça resistente.',null],
+  ['spider','Aranha da Mina','Surge nas galerias.','Pequena e veloz.',null],
+  ['miner','Mineiro Condenado','Um trabalhador que nunca saiu.','Avança com sua ferramenta.',null],
+  ['ghost','Fantasma da Mina','Assombra as escavações.','Flutua sobre o chão.',null],
+  ['mineGhoul','Ghoul','Primeiro chefe da mina.','Protege as profundezas.',null],
+  ['mineWendigo','Wendigo da Mina','Segundo chefe da mina.','Fome nas trevas.',null],
+  ['minerGeneral','General Mineiro','Chefe final da mina.','Comanda os condenados do ouro.',null],
   ['bat', 'Morcego', 'Surge no início da noite.', 'Voa baixo e investe contra viajantes.'],
   ['dog', 'Cão das Cinzas', 'Chega após o primeiro minuto.', 'Rápido e resistente, persegue pela estrada.'],
   ['skeleton', 'Esqueleto', 'Sai da terra após três minutos.', 'O deserto não deixa seus mortos descansarem.'],
   ['giantBat', 'Morcego Gigante', 'Chefe da primeira onda.', 'A sombra que cobre a lua.'],
   ['fireChupacabra', 'Chupacabra de Fogo', 'Chefe da segunda onda.', 'Fera ardente da fronteira.'],
   ['shadowMarshal', 'Marechal das Sombras', 'Chefe da última onda.', 'Comanda os condenados sob a lua.'],
-  ['crow', 'Corvo da Estrada', 'Uma sombra de asas sobre o deserto.', 'Ataca em rasantes rápidos.'],
   ['zombie', 'Morto da Fronteira', 'Vagueia perto das casas abandonadas.', 'Avança devagar e resiste aos golpes.'],
   ['bonewalker', 'Caminhante de Ossos', 'Surge entre as covas.', 'Os ossos não aceitaram o descanso.', 'skeleton'],
   ['snatcher', 'Raptor das Sombras', 'Aparece nas horas mais escuras.', 'Persegue viajantes com investidas repentinas.', null],
@@ -52,8 +60,8 @@ export class MenuView {
     let content='';
     if(screen==='home')content=`<div class="menu-home">${logo}<nav aria-label="Menu principal">${button('modes','NOVO JOGO',true)}${button('settings','CONFIGURAÇÃO')}${button('exit','SAIR')}</nav></div>`;
     if(screen==='modes')content=wrap(`${back('home','NOVA JORNADA')}<h1>ESCOLHA O MODO</h1><div class="menu-choice-grid menu-fill"><button class="mode-choice" data-menu-action="mode:campaign"><img src="${ART}desert.webp" alt="Deserto à noite"><span><b>CAMPANHA</b><small>15 minutos · chefes · evolução por cartas</small></span></button><button class="mode-choice mode-free" data-menu-action="mode:free"><img src="${ART}bat.svg" alt="Morcego"><span><b>MODO LIVRE</b><small>Hordas sem limite de tempo</small></span></button></div>`);
-    if(screen==='champion')content=wrap(`${back('modes',state.mode==='campaign'?'CAMPANHA':'MODO LIVRE')}<h1>ESCOLHA O CAMPEÃO</h1><div class="hero-layout menu-fill">${Object.entries(CHAMPIONS).map(([id,h])=>`<button class="hero-choice ${state.champion===id?'is-selected':''}" data-menu-action="champion:${id}" aria-pressed="${state.champion===id}"><img src="${ART}${id}.webp" alt="${h.name}"><span class="hero-copy"><small>${h.primary==='whip'?'CHICOTE':'REVÓLVER'}</small><b>${h.name}</b><span class="hero-stats">♥ ${h.hp} VIDA · ✦ ${h.damage} DANO<br>➤ ${h.speed} VELOCIDADE · ${h.range} m<br>⬟ ${h.armor} ARMADURA · ${Math.round(h.crit*100)}% CRÍTICO</span></span></button>`).join('')}</div>${button('map',`CONTINUAR COM ${state.champion==='maria'?'MARIA':'JOÃO'}`,true)}`);
-    if(screen==='map')content=wrap(`${back('champion',CHAMPIONS[state.champion].name)}<h1>ESCOLHA O MAPA</h1><div class="map-layout menu-fill"><div class="map-art"><img src="${ART}desert.webp" alt="Deserto dos Condenados"></div><div class="map-details"><small>CAPÍTULO I</small><h2>DESERTO DOS CONDENADOS</h2><p class="map-description">Casas esquecidas, cânions e uma horda sob a luz da lua.</p><p class="map-mode">${state.mode==='campaign'?'15 MINUTOS · 3 CHEFES':'HORDA SEM FIM'}</p>${button('play','COMEÇAR PARTIDA',true)}</div></div><nav class="menu-tools" aria-label="Preparação">${button('arsenal','ARSERNAL')}${button('bestiary','BESTIÁRIO')}${button('merchant','BENTO')}</nav>`,'map-window');
+    if(screen==='champion')content=wrap(`${back('modes',state.mode==='campaign'?'CAMPANHA':'MODO LIVRE')}<h1>ESCOLHA O CAMPEÃO</h1><div class="hero-layout menu-fill">${Object.entries(CHAMPIONS).map(([id,h])=>`<button class="hero-choice ${state.champion===id?'is-selected':''}" data-menu-action="champion:${id}" aria-pressed="${state.champion===id}"><img src="${ART}${id}.webp" alt="${h.name}"><span class="hero-copy"><small>${h.primary==='whip'?'CHICOTE':h.primary==='shotgun'?'ESCOPETA':'REVÓLVER'}</small><b>${h.name}</b><span class="hero-stats">♥ ${h.hp} VIDA · ✦ ${h.damage} DANO<br>➤ ${h.speed} VELOCIDADE · ${h.range} m<br>⬟ ${h.armor} ARMADURA · ${Math.round(h.crit*100)}% CRÍTICO</span></span></button>`).join('')}</div>${button('map',`CONTINUAR COM ${CHAMPIONS[state.champion].name.toUpperCase()}`,true)}`);
+    if(screen==='map')content=wrap(`${back('champion',CHAMPIONS[state.champion].name)}<h1>ESCOLHA O MAPA</h1><nav class="stage-select">${Object.entries(STAGES).map(([id,stage])=>`<button data-menu-action="stage:${id}" aria-pressed="${state.map===id}">${stage.chapter} · ${stage.name}</button>`).join('')}</nav><div class="map-layout menu-fill"><div class="map-art"><img src="${ART}${state.map}.webp" alt="${STAGES[state.map].name}"></div><div class="map-details"><small>CAPÍTULO ${STAGES[state.map].chapter}</small><h2>${STAGES[state.map].name.toUpperCase()}</h2><p class="map-description">${STAGES[state.map].description}</p><p class="map-mode">${state.mode==='campaign'?'15 MINUTOS · 3 CHEFES':'HORDA SEM FIM'}</p>${button('play','COMEÇAR PARTIDA',true)}</div></div><nav class="menu-tools" aria-label="Preparação">${button('arsenal','ARSERNAL')}${button('bestiary','BESTIÁRIO')}${button('merchant','BENTO')}</nav>`,'map-window');
     if(screen==='arsenal'){
       const active=['pistol','molotov','horseshoe','ghostShot','requiem','silverRain','lantern','boneStorm','returningBlade','lunarReturn','pirateBomb'];
       const ordered=[...new Set([...active,'heart','doubleShot','ironWill','soulHarvest','lastStand',...Object.keys(ABILITIES)])];

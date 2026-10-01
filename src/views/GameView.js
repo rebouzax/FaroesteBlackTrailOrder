@@ -1,4 +1,8 @@
+import { MineStage } from './MineStage.js';
+import { STAGES } from '../config/stages.js';
 import { GameAudio } from '../services/GameAudio.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { placeAsset, rigBento, animateBento } from './AssetPlacement.js';
 import { AbilityEffectsView } from './AbilityEffectsView.js';
 import { ABILITIES, cardDescription, abilityMaxLevel } from '../config/abilityConfig.js';
 import * as THREE from 'three';
@@ -6,7 +10,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { applyPSXMaterial } from '../vendor/threejs-psx-shader/src/PSXMaterial.js';
+import { applyPSXMaterial, setJitterScale, setAffineAmount, setAffineCap, setAffineFade } from '../vendor/threejs-psx-shader/src/PSXMaterial.js';
 import { PSXPipeline } from '../vendor/threejs-psx-shader/src/PSXPipeline.js';
 import { MenuView } from './MenuView.js';
 
@@ -27,17 +31,21 @@ export class GameView {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
-    this.psx = new PSXPipeline(this.renderer, this.scene, this.camera, { resolutionHeight: window.matchMedia('(pointer: coarse)').matches ? 200 : 240 });
+    this.psx = new PSXPipeline(this.renderer, this.scene, this.camera, { resolutionHeight: window.matchMedia('(pointer: coarse)').matches ? 240 : 300 });
     this.psx.getEffect('fog').settings.color = '#172640';
     this.psx.getEffect('fog').settings.density = 0.0025;
     this.psx.getEffect('fog').settings.offset = 14;
-    this.psx.getEffect('dithering').settings.strength = 0.72;
+    this.psx.getEffect('dithering').settings.strength = 0.32;
     Object.assign(this.psx.getEffect('crt').settings, {
-      vignetteAmount: 0.56,
-      scanlineWeight: 0.055,
-      grainWeight: 0.024,
-      chromatic: 0.1,
+      vignetteAmount: 0.36,
+      scanlineWeight: 0.025,
+      grainWeight: 0.008,
+      chromatic: 0.015,
+      grilleOpacity: .04,
+      scanlineSpeed: 0,
+      bend: 0,
     });
+    setJitterScale(.28); setAffineAmount(.35); setAffineCap(.025); setAffineFade(8);
     this.previousFrameTime = performance.now();
     this.loader = new GLTFLoader();
     this.draco = new DRACOLoader();
@@ -84,11 +92,15 @@ export class GameView {
     this.pistolEffect.visible = false;
     this.recoil = 0;
     this.pistolFlash = 0;
+    this.weaponReady = this.loadRevolver();
+    this.shotgun = this.createRevolver();this.shotgun.visible=false;this.camera.add(this.shotgun);
+    this.shotgunReady=this.loadShotgun();
     this.resize();
   }
 
   mount(viewModel) {
     this.viewModel = viewModel;
+    this.root.addEventListener('pointerdown', () => this.audio.unlock(), { passive: true });
     for (const collider of this.colliderSpecs) {
       if (collider.kind === 'box') this.viewModel.addBoxCollider(collider.minX, collider.maxX, collider.minZ, collider.maxZ);
       else this.viewModel.addCollider(collider.x, collider.z, collider.radius);
@@ -632,30 +644,49 @@ export class GameView {
       ['shack.glb', 51, -43, 11, -0.42],
       ['mudbrick-house.glb', -52, -148, 13, 0.2],
     ]) progress.push(this.loadHouse(filename, x, z, width, rotation));
-    for (const [filename, x, z, width, rotation, zUp] of [
-      ['psx_abandoned_house.glb', -65, 133, 11, 0.24, true],
-      ['psx_abandoned_church.glb', 77, 28, 14, -0.28, true],
-      ['psx_old_abandoned_mansion.glb', -78, -55, 16, 0.18, true],
-      ['low_poly_western_saloon.glb', 73, -165, 14, -0.18, false],
-    ]) progress.push(this.loadScenery(filename, x, z, width, rotation, { zUp, solid: true }));
+    for (const [filename, x, z, width, rotation] of [
+      ['psx_abandoned_house.glb', -65, 133, 11, Math.PI / 2],
+      ['psx_abandoned_church.glb', 77, 28, 14, -Math.PI / 2],
+      ['psx_old_abandoned_mansion.glb', -78, -55, 16, Math.PI / 2],
+      ['low_poly_western_saloon.glb', 73, -165, 14, -0.18],
+    ]) progress.push(this.loadScenery(filename, x, z, width, rotation, { solid: true }));
+
     for (const [x, z, width] of [[-25, 196, 5], [52, 129, 6], [-89, 24, 7], [90, -78, 6], [-57, -210, 5]])
       progress.push(this.loadScenery('tree_ps1psx_style.glb', x, z, width, 0, { trunkRadius: 1.1 }));
     for (const [x, z] of [[31, 165], [-40, 44], [49, -59], [-51, -172]])
-      progress.push(this.loadScenery('psx_barrel.glb', x, z, 1.2, 0.4, { zUp: true, solid: true }));
+      progress.push(this.loadScenery('psx_barrel.glb', x, z, 1.2, 0.4, { solid: true }));
     for (const [x, z, rotation] of [[-27, -93, 0.35], [30, -176, -0.48]])
       progress.push(this.loadCorpse(x, z, rotation));
     for (const [type, filename] of [
+      ['snake','snake.glb'],['scorpion','scorpion.glb'],['spider','spider.glb'],['ghost','ghost.glb'],['ghoul','ghoul.glb'],['miner','miner.glb'],
       ['bat', 'bat.glb'], ['dog', 'dog.glb'], ['skeleton', 'skeleton.glb'], ['marshal', 'marshal.glb'],
-      ['crow', 'low_poly_crow.glb'], ['zombie', 'lowpoly_zombie.glb'],
+      ['zombie', 'lowpoly_zombie.glb'],
       ['bonewalker', 'low_poly_psx_skeleton.glb'], ['wendigo', 'stylized_low-poly_wendigo.glb'],
       ['snatcher', 'psx_snatcher_-_low_poly_horror.glb'],
     ]) progress.push(this.loadEnemyTemplate(type, filename));
     for (const filename of ['ps1_style_health_bandage.glb', 'chest.glb', 'bento_psx(1).glb'])
       progress.push(this.loadEventTemplate(filename));
-    Promise.allSettled(progress);
+    this.assetsReady = Promise.allSettled(progress).then(() => this.loadPerchedCrows());
   }
 
-  async loadScenery(filename, x, z, width, rotation, { zUp = false, solid = false, trunkRadius = 0 } = {}) {
+  async loadPerchedCrows() {
+    try {
+      const asset = await this.loadSharedAsset('low_poly_crow.glb');
+      this.sceneryCrows = [];
+      // Perched on the flat top of two existing grave markers.
+      for (const [x,z,heading] of [[-28,166,.6],[34,-57,-1.2]]) {
+        const bird = placeAsset(cloneSkinned(asset.scene), { size:.65,x,z,yaw:heading });
+        bird.traverse(child=>{if(child.isMesh)child.material=new THREE.MeshLambertMaterial({color:'#171b25'});});
+        const ray = new THREE.Raycaster(new THREE.Vector3(x,8,z),new THREE.Vector3(0,-1,0));
+        this.world.updateMatrixWorld(true);
+        const surface = ray.intersectObjects(this.world.children,true).find(hit=>hit.point.y> .3 && hit.point.y<3);
+        bird.position.y += surface?.point.y || .8;
+        bird.userData.heading=heading; this.world.add(bird);this.sceneryCrows.push(bird);
+      }
+    } catch(error) { console.warn('Corvos do cenário indisponíveis.',error); }
+  }
+
+  async loadScenery(filename, x, z, width, rotation, { solid = false, trunkRadius = 0 } = {}) {
     try {
       const asset = await this.loadSharedAsset(filename);
       const scene = asset.scene.clone(true);
@@ -665,17 +696,13 @@ export class GameView {
           ? child.material.map(material => this.psxMaterial(material, 0.4))
           : this.psxMaterial(child.material, 0.4);
       });
-      if (zUp) scene.rotation.x = -Math.PI / 2;
-      scene.updateMatrixWorld(true);
-      const raw = new THREE.Box3().setFromObject(scene);
-      const size = raw.getSize(new THREE.Vector3());
-      scene.scale.setScalar(width / Math.max(size.x, size.z));
-      scene.rotation.y = rotation;
-      scene.updateMatrixWorld(true);
-      const floor = new THREE.Box3().setFromObject(scene);
-      scene.position.set(x, -floor.min.y, z);
-      this.world.add(scene);
-      if (solid) this.addFootprint(scene, 0.15);
+      if (filename === 'tree_ps1psx_style.glb') {
+        const ground = scene.getObjectByName('ground_0');
+        if (ground) ground.removeFromParent();
+      }
+      const placed = placeAsset(scene, { size: width, x, z, yaw: rotation });
+      this.world.add(placed);
+      if (solid) this.addFootprint(placed, 0.05);
       else if (trunkRadius) this.addStaticCollider(x, z, trunkRadius);
     } catch (error) { console.warn(`Cenário ${filename} indisponível.`, error); }
   }
@@ -711,6 +738,7 @@ export class GameView {
           ? child.material.map(material => this.psxMaterial(material, 0.4))
           : this.psxMaterial(child.material, 0.4);
       });
+      if (filename === 'bento_psx(1).glb') rigBento(scene);
       this.eventTemplates ||= new Map();
       this.eventTemplates.set(filename, scene);
     } catch (error) { console.warn(`Item ${filename} indisponível.`, error); }
@@ -728,14 +756,9 @@ export class GameView {
           ? child.material.map((material) => this.psxMaterial(material, 0.4))
           : this.psxMaterial(child.material, 0.4);
       });
-      const bounds = new THREE.Box3().setFromObject(scene);
-      const size = bounds.getSize(new THREE.Vector3());
-      scene.scale.setScalar(desiredWidth / Math.max(size.x, size.z));
-      const floor = new THREE.Box3().setFromObject(scene);
-      scene.position.set(x, -floor.min.y, z);
-      scene.rotation.y = rotation;
-      this.world.add(scene);
-      this.addFootprint(scene, Math.min(0.4, desiredWidth * 0.03));
+      const placed = placeAsset(scene, { size: desiredWidth, x, z, yaw: rotation });
+      this.world.add(placed);
+      this.addFootprint(placed, Math.min(0.4, desiredWidth * 0.03));
       const lantern = new THREE.PointLight(0xffa75c, 11, 14, 2);
       lantern.position.set(x + 3, 2.5, z + 2);
       this.world.add(lantern);
@@ -756,21 +779,19 @@ export class GameView {
         child.castShadow = true;
         const convert = material => {
           const result = this.psxMaterial(material, 0.35);
-          if (type === 'crow' && !result.map) result.color.set('#333044');
+          if(type==='ghost'){result.transparent=true;result.opacity=.62;result.depthWrite=false;if(result.emissive)result.emissive.set('#476f72');}
           return result;
         };
         child.material = Array.isArray(child.material)
           ? child.material.map(convert)
           : convert(child.material);
       });
-      const bounds = new THREE.Box3().setFromObject(scene);
-      const size = bounds.getSize(new THREE.Vector3());
-      const flight = type === 'bat' || type === 'crow';
-      const desired = type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3;
-      scene.scale.setScalar(desired / Math.max(size.x, size.y, size.z));
-      const scaled = new THREE.Box3().setFromObject(scene);
-      scene.position.y = flight ? -(scaled.min.y + scaled.max.y) / 2 : -scaled.min.y;
-      this.enemyTemplates.set(type, { scene, animations });
+      const flight = type === 'bat';
+      const desired = {snake:.65,scorpion:.6,spider:.7}[type] || (type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3);
+      const normalized = placeAsset(scene, { size:desired,dimension:flight?'width':'height' });
+      if(flight) normalized.position.y -= new THREE.Box3().setFromObject(normalized).getSize(new THREE.Vector3()).y/2;
+      const wrapper = new THREE.Group();wrapper.add(normalized);
+      this.enemyTemplates.set(type, { scene:wrapper, animations });
     } catch (error) {
       console.error(`Falha ao carregar ${type}.`, error);
     }
@@ -781,14 +802,14 @@ export class GameView {
     if (!template) return null;
     const root = new THREE.Group();
     const body = cloneSkinned(template.scene);
-    const deformables = this.prepareProceduralLimbs(body, type);
+    const deformables = template.animations.length ? [] : this.prepareProceduralLimbs(body, type);
     root.add(body);
     root.position.set(x, y, z);
     const scale = boss ? 2.7 : 1;
     root.scale.setScalar(scale);
     this.world.add(root);
     const mixer = new THREE.AnimationMixer(body);
-    const preferred = type === 'bat' || type === 'crow' ? /fly/i : /run|walk/i;
+    const preferred = type === 'bat' ? /fly/i : /run|walk/i;
     const clip = template.animations.find((item) => preferred.test(item.name)) || template.animations[0];
     const walk = clip ? mixer.clipAction(clip).play() : null;
     const attackClip = template.animations.find(item => /attack|punch|bite|strike/i.test(item.name));
@@ -800,30 +821,20 @@ export class GameView {
   }
 
   prepareProceduralLimbs(body, type) {
-    if (!['zombie', 'bonewalker', 'crow'].includes(type)) return [];
     const deformables = [];
     body.traverse(child => {
       if (!child.isMesh || child.isSkinnedMesh) return;
       child.geometry = child.geometry.clone();
-      child.userData.proceduralGeometry = true;
-      child.frustumCulled = false;
-      const position = child.geometry.getAttribute('position');
+      child.userData.proceduralGeometry = true;child.frustumCulled = false;
+      const position=child.geometry.attributes.position;
       position.setUsage(THREE.DynamicDrawUsage);
-      const original = Float32Array.from(position.array);
       child.geometry.computeBoundingBox();
-      const box = child.geometry.boundingBox;
-      const width = box.max.x - box.min.x, height = box.max.y - box.min.y;
-      const midX = (box.min.x + box.max.x) * 0.5;
-      const pivotY = box.min.y + height * (type === 'crow' ? 0.48 : 0.65);
-      const threshold = width * (type === 'crow' ? 0.16 : 0.21);
-      const pivotOffset = width * (type === 'crow' ? 0.12 : 0.15);
-      const limbs = [];
-      for (let i = 0; i < position.count; i++) {
-        const px = original[i * 3], py = original[i * 3 + 1];
-        if (Math.abs(px - midX) < threshold || py < pivotY - height * 0.09) continue;
-        limbs.push({ i, side: Math.sign(px - midX), pivotX: midX + Math.sign(px - midX) * pivotOffset });
-      }
-      if (limbs.length) deformables.push({ position, original, pivotY, limbs, type });
+      const box=child.geometry.boundingBox, extent=box.getSize(new THREE.Vector3());
+      // Some imported characters use Z as their lateral axis.
+      const sideAxis=extent.x>=extent.z?0:2, depthAxis=sideAxis===0?2:0;
+      const center=(box.min.getComponent(sideAxis)+box.max.getComponent(sideAxis))/2;
+      const half=extent.getComponent(sideAxis)/2, height=extent.y;
+      deformables.push({position,original:Float32Array.from(position.array),sideAxis,depthAxis,center,half,height,minY:box.min.y,type});
     });
     return deformables;
   }
@@ -837,17 +848,32 @@ export class GameView {
     actor.attackTime = Math.max(0, actor.attackTime - delta);
     actor.phase += delta * 7;
     const stride = Math.sin(actor.phase);
-    for (const { position, original, pivotY, limbs, type } of actor.deformables) {
-      const attack = actor.attackTime > 0 ? Math.sin(actor.attackTime / 0.35 * Math.PI) : 0;
-      const hit = actor.hitTime > 0 ? Math.sin(actor.hitTime / 0.28 * Math.PI) : 0;
-      for (const { i, side, pivotX } of limbs) {
-        const dx = original[i * 3] - pivotX, dy = original[i * 3 + 1] - pivotY;
-        const angle = type === 'crow' ? side * (Math.sin(actor.phase * 1.7) * 0.44 + hit * 0.18)
-          : -side * (0.62 + stride * 0.14 - attack * 0.5 + hit * 0.28);
-        const c = Math.cos(angle), s = Math.sin(angle);
-        position.setXYZ(i, pivotX + dx * c - dy * s, pivotY + dx * s + dy * c, original[i * 3 + 2]);
+    for (const {position,original,sideAxis,depthAxis,center,half,height,minY,type} of actor.deformables) {
+      const attack=Math.sin(Math.min(1,actor.attackTime/.35)*Math.PI),hit=Math.sin(Math.min(1,actor.hitTime/.28)*Math.PI);
+      for(let i=0;i<position.count;i++) {
+        const base=i*3, y=original[base+1], lateral=original[base+sideAxis]-center;
+        const side=Math.sign(lateral)||1, h=(y-minY)/height;
+        let py=y, pd=original[base+depthAxis], pl=original[base+sideAxis];
+        if(type==='ghost') {
+          pl+=Math.sin(actor.phase*.6+h*5)*half*.05;
+        } else if(type==='spider'||type==='scorpion') {
+          const weight=THREE.MathUtils.smoothstep(Math.abs(lateral)/Math.max(.001,half),.3,.8);
+          py+=Math.sin(actor.phase*1.5+pd*8+side)*height*.12*weight;
+          pd+=Math.cos(actor.phase*1.5+pd*8+side)*height*.08*weight;
+        } else if(h<.48) {
+          const angle=stride*side*.34,dy=y-(minY+height*.47);
+          py=minY+height*.47+dy*Math.cos(angle);pd+=dy*Math.sin(angle);
+        } else if(h>.52 && h<.88 && Math.abs(lateral)>half*.32) {
+          const weight=THREE.MathUtils.smoothstep(Math.abs(lateral)/half,.32,.65);
+          const angle=-side*(.8+stride*side*.12-attack*.3+hit*.2)*weight;
+          const dx=lateral-side*half*.3,dy=y-(minY+height*.73);
+          pl=center+side*half*.3+dx*Math.cos(angle)-dy*Math.sin(angle);
+          py=minY+height*.73+dx*Math.sin(angle)+dy*Math.cos(angle);
+          pd+=height*(attack*.17+stride*side*.035)*weight;
+        }
+        position.array[base+sideAxis]=pl;position.array[base+1]=py;position.array[base+depthAxis]=pd;
       }
-      position.needsUpdate = true;
+      position.needsUpdate=true;
     }
     actor.body.position.y = actor.baseY + (actor.hitTime > 0 ? -0.11 * Math.sin(actor.hitTime / 0.28 * Math.PI) : Math.abs(stride) * 0.07);
     actor.body.rotation.z = (actor.hitTime > 0 ? 0.18 * Math.sin(actor.hitTime / 0.28 * Math.PI) : stride * 0.07) * (object.scale.x < 2 ? 1 : 0.6);
@@ -882,27 +908,18 @@ export class GameView {
 
   addEventObject(kind, x, z) {
     const specs = {
-      bandage: ['ps1_style_health_bandage.glb', 0.85, true],
-      chest: ['chest.glb', 1.45, true],
-      merchant: ['bento_psx(1).glb', 2.2, true],
+      bandage: ['ps1_style_health_bandage.glb', 0.85],
+      chest: ['chest.glb', 1.45],
+      merchant: ['bento_psx(1).glb', 2.2],
     };
-    const [filename, desired, zUp] = specs[kind] || [];
+    const [filename, desired] = specs[kind] || [];
     const template = this.eventTemplates?.get(filename);
     if (!template) return null;
-    const scene = template.clone(true);
-    if (zUp) scene.rotation.x = -Math.PI / 2;
-    scene.updateMatrixWorld(true);
-    const original = new THREE.Box3().setFromObject(scene);
-    const size = original.getSize(new THREE.Vector3());
-    const scale = desired / (kind === 'merchant' ? size.y : Math.max(size.x, size.z));
-    scene.scale.setScalar(scale);
-    scene.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(scene);
-    const center = bounds.getCenter(new THREE.Vector3());
-    scene.position.set(-center.x, -bounds.min.y, -center.z);
+    const scene = cloneSkinned(template);
+    const normalized = placeAsset(scene, { size: desired, dimension: kind === 'merchant' ? 'height' : 'width' });
     const object = new THREE.Group();
     object.position.set(x, 0, z);
-    object.add(scene);
+    object.add(normalized);
     this.world.add(object);
     return object;
   }
@@ -915,8 +932,10 @@ export class GameView {
       object.position.y = 0.15 + Math.sin(age * 2.4) * 0.13;
       object.rotation.y += 0.012;
     } else if (kind === 'merchant') {
-      object.rotation.y = Math.sin(age * 0.8) * 0.08;
-      object.position.y = Math.sin(age * 2) * 0.025;
+      animateBento(object, age);
+      const player = this.camera.position;
+      object.rotation.y = Math.atan2(player.x - object.position.x, player.z - object.position.z);
+      object.position.y = 0;
     }
   }
 
@@ -945,11 +964,7 @@ export class GameView {
 
   startWhip() {
     this.whipTimer = 0.38;
-    if (this.armsMixer && this.armsStrike) {
-      this.armsMixer.stopAllAction();
-      this.armsStrike.reset().setLoop(THREE.LoopOnce, 1).play();
-      this.armsStrike.clampWhenFinished = true;
-    }
+
   }
 
   whipCrack() {
@@ -975,13 +990,67 @@ export class GameView {
     return burst;
   }
 
-  setChampion(champion) {
-    this.weapon.visible = champion !== 'maria';
-    this.revolver.visible = champion === 'maria';
+  selectStage(id) {
+    this.currentStage=id==='mine'?'mine':'desert';
+    const mine=this.currentStage==='mine';
+    if(mine&&!this.mineStage){this.mineStage=new MineStage(this);this.world.add(this.mineStage.group);}
+    for(const child of this.world.children)child.visible=child===this.abilityEffects.group|| (child===this.mineStage?.group?mine:!mine);
+    for(const child of this.scene.children)if(child!==this.world&&child!==this.camera)child.visible=!mine;
+    this.viewModel.colliders=mine?[...this.mineStage.colliders]:[...this.colliderSpecs];
+    this.scene.background.set(mine?'#141211':'#111d38');
+    this.scene.fog.color.set(mine?'#211c19':'#172640');this.scene.fog.density=mine?.009:.0028;
+    Object.assign(this.psx.getEffect('fog').settings,{color:mine?'#211c19':'#172640',density:mine?.009:.0025});
+    const spawn=STAGES[this.currentStage].spawn;this.camera.position.set(spawn.x,1.68,spawn.z);this.camera.rotation.set(0,0,0);
+    this.root.querySelector('.stage-timer small').textContent=STAGES[this.currentStage].name.toUpperCase();
+    this.buttons.resume.textContent='VOLTAR À PARTIDA';
   }
+
+  setChampion(champion) {
+    this.weapon.visible = champion === 'joao';
+    this.revolver.visible = champion === 'maria';
+    this.shotgun.visible = champion === 'labuta';
+  }
+
+  async loadShotgun() {
+    try {
+      const asset=await this.loadSharedAsset('shotgun.glb');
+      const model=placeAsset(cloneSkinned(asset.scene),{size:.95,yaw:Math.PI});
+      const center=new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());model.position.sub(center);
+      model.traverse(child=>{if(child.isMesh){const convert=m=>{const mat=this.psxMaterial(m,.08);mat.depthTest=false;mat.depthWrite=false;return mat;};child.material=Array.isArray(child.material)?child.material.map(convert):convert(child.material);child.renderOrder=5;}});
+      const flash=this.shotgun.userData.flash;
+      for(const child of [...this.shotgun.children])if(child!==flash)this.shotgun.remove(child);
+      this.shotgun.add(model);flash.position.set(0,.055,-.5);flash.scale.setScalar(1.6);
+    }catch(error){console.warn('Escopeta indisponível.',error);}
+  }
+
+  fireShotgun(){this.shotgunKick=1;this.audio.shotgun();}
 
   fireRevolver() { this.recoil = 1; this.audio.play('shot', .65, .94 + Math.random()*.07); }
   fireAbilityPistol() { this.pistolFlash = .3; this.audio.play('shot', .35, 1.08); }
+
+  async loadRevolver() {
+    try {
+      const model = await new FBXLoader().loadAsync(`${MODEL_ROOT}Revolver.fbx`);
+      model.rotation.y = Math.PI / 2;
+      const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());
+      model.scale.multiplyScalar(.52 / Math.max(size.x,size.y,size.z));
+      model.updateMatrixWorld(true);
+      const normalized = new THREE.Box3().setFromObject(model), center = normalized.getCenter(new THREE.Vector3());
+      model.position.sub(center);
+      model.traverse(child => {
+        if (!child.isMesh) return;
+        const convert = material => { const converted = this.psxMaterial(material, .3); converted.depthTest = false; converted.depthWrite = false; return converted; };
+        child.material = Array.isArray(child.material) ? child.material.map(convert) : convert(child.material);
+        child.renderOrder = 5;
+      });
+      for (const weapon of [this.revolver,this.pistolEffect]) {
+        const flash = weapon.userData.flash;
+        for (const child of [...weapon.children]) if (child !== flash) { weapon.remove(child); child.geometry?.dispose(); }
+        weapon.add(model.clone(true));
+        flash.position.set(0,.06,-.35);
+      }
+    } catch (error) { console.warn('Revólver FBX indisponível.', error); }
+  }
 
   createRevolver() {
     const group = new THREE.Group();
@@ -1112,7 +1181,7 @@ export class GameView {
     if (!bosses.length) return;
     this.camera.updateMatrixWorld();
     const width = this.root.clientWidth, height = this.root.clientHeight;
-    const labels = { giantBat: 'MORCEGO GIGANTE', fireChupacabra: 'CHUPACABRA DE FOGO', shadowMarshal: 'MARECHAL DAS SOMBRAS' };
+    const labels = { mineGhoul:'GHOUL',mineWendigo:'WENDIGO',minerGeneral:'GENERAL MINEIRO', giantBat: 'MORCEGO GIGANTE', fireChupacabra: 'CHUPACABRA DE FOGO', shadowMarshal: 'MARECHAL DAS SOMBRAS' };
     for (const enemy of bosses) {
       let node = this.bossBarNodes.get(enemy);
       if (!node) {
@@ -1125,7 +1194,8 @@ export class GameView {
       }
       const point = new THREE.Vector3(enemy.x, enemy.y + (enemy.visual === 'bat' ? 3.6 : 4.8), enemy.z);
       point.project(this.camera);
-      const visible = point.z < 1 && point.z > -1 && Math.abs(point.x) < 1.2 && Math.abs(point.y) < 1.3;
+      const distance = Math.hypot(enemy.x-this.camera.position.x, enemy.z-this.camera.position.z);
+      const visible = distance <= 22 && point.z < 1 && point.z > -1 && Math.abs(point.x) < .95 && Math.abs(point.y) < .95;
       node.hidden = !visible;
       if (!visible) continue;
       node.style.left = `${(point.x * 0.5 + 0.5) * width}px`;
@@ -1135,13 +1205,15 @@ export class GameView {
   }
 
   update(delta, model) {
+    this.audio.syncMusic(model.phase === 'menu' ? 'menu' : 'stage', document.hidden || (model.phase === 'playing' && !model.isLocked) || ['defeat','victory'].includes(model.phase));
+    this.mineStage?.update(model.visualTime);
     this.audio.footsteps(delta, model.walking, model.attributes().speed);
     this.abilityEffects.update(this.viewModel.abilitySystem, model, this.camera.position);
     this.crackTimer = Math.max(0, this.crackTimer - delta);
     this.crackEffect.visible = this.crackTimer > 0;
     if (this.crackTimer > 0) this.crackEffect.scale.setScalar(1 + (0.14 - this.crackTimer) * 5);
     this.crackLight.intensity = this.crackTimer / 0.14 * 3.5;
-    const sway = model.walking ? Math.sin(model.elapsed * 10) : 0;
+    const sway = model.walking ? Math.sin(model.visualTime * 10) : 0;
     const strike = model.whip.active ? model.whip.elapsed / 0.38 : -1;
     let swing = 0;
     if (strike >= 0 && strike < 0.24) swing = -strike / 0.24 * 0.38;
@@ -1150,14 +1222,23 @@ export class GameView {
     this.weapon.position.set(0.43 - Math.max(0,swing)*.27 + sway*.007, -.49 + sway*.018 + Math.abs(swing)*.11, -.72);
     this.weapon.rotation.set(-.04-Math.max(0,swing)*.36,-.07,-.06-swing*1.25);
     this.recoil = Math.max(0, this.recoil - delta * 6);
-    this.revolver.position.set(.36+sway*.006,-.34+sway*.012,-.64+this.recoil*.09);
-    this.revolver.rotation.x = this.recoil*.25;
+    this.walkBlend=THREE.MathUtils.damp(this.walkBlend||0,model.walking?1:0,9,delta);
+    this.weaponPhase=(this.weaponPhase||0)+delta*Math.min(13,model.attributes().speed*1.9);
+    const gait=this.weaponPhase,weight=this.walkBlend;
+    this.revolver.position.set(.36+Math.sin(gait)*.022*weight,-.34+Math.cos(gait*2)*.015*weight,-.64+this.recoil*.09);
+    this.revolver.rotation.set(this.recoil*.25+Math.cos(gait*2)*.025*weight,Math.sin(gait)*.035*weight,-Math.sin(gait)*.045*weight);
+    this.shotgunKick=Math.max(0,(this.shotgunKick||0)-delta*3.5);
+    const kick=this.shotgunKick;
+    this.shotgun.position.set(.29+Math.sin(gait)*.019*weight,-.34+Math.cos(gait*2)*.015*weight-kick*.035,-.72+kick*.18);
+    this.shotgun.rotation.set(kick*.2+Math.cos(gait*2)*.018*weight,Math.sin(gait)*.025*weight,-Math.sin(gait)*.035*weight);
+    this.shotgun.userData.flash.visible=kick>.8;
     this.revolver.userData.flash.visible = this.recoil > .76;
     this.pistolFlash = Math.max(0,this.pistolFlash-delta);
     this.pistolEffect.visible = this.pistolFlash > 0;
     this.pistolEffect.position.set(-.38,-.42+(this.pistolFlash/.3)*.08,-.74);
     this.pistolEffect.userData.flash.visible = this.pistolFlash > .22;
-    this.dust.rotation.y += delta * 0.018;
+    this.dust.rotation.y += delta * 0.008;
+    this.sceneryCrows?.forEach((bird,i)=> { bird.rotation.y=bird.userData.heading+Math.sin(model.visualTime*.6+i*2)*.12; });
     this.moonlight.intensity = 2.7 + Math.sin(performance.now() * 0.00043) * 0.14;
     this.moonHalo.material.opacity = 0.11 + Math.sin(performance.now() * 0.0007) * 0.025;
     this.lanterns?.forEach((light, index) => { light.intensity = 8.5 + Math.sin(performance.now() * 0.009 + index * 2.7) * 1.4; });
@@ -1176,7 +1257,7 @@ export class GameView {
       const xpCost = model.nextLevelCost();
       const xpProgress = Math.min(100, model.xp / xpCost * 100);
       this.buttons.xpFill.style.width = `${xpProgress}%`;
-      this.buttons.xpLabel.textContent = `NÍVEL ${model.level} · ${model.xp}/${xpCost} XP`;
+      this.buttons.xpLabel.textContent = `NÍVEL ${model.level} · ${Math.floor(model.xp)}/${xpCost} XP`;
       this.buttons.xpTrack.setAttribute('aria-valuenow', String(Math.min(model.xp, xpCost)));
       this.buttons.xpTrack.setAttribute('aria-valuemax', String(xpCost));
       this.root.classList.toggle('is-active', model.isLocked && model.phase === 'playing' && !this.viewModel.isPortraitBlocked());
@@ -1194,6 +1275,7 @@ export class GameView {
   }
 
   dispose() {
+    this.audio.dispose();
     this.renderer.setAnimationLoop(null);
     this.psx.dispose();
     this.draco.dispose();

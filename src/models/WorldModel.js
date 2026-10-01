@@ -1,6 +1,7 @@
 import { ABILITIES, abilityStats, abilityMaxLevel } from '../config/abilityConfig.js';
 import { FRONTIER_CARDS } from '../config/frontierCards.js';
 import { CHAMPIONS, STARTER_DECK } from '../config/champions.js';
+import { STAGES } from '../config/stages.js';
 export class WorldModel {
   constructor() {
     this.stageName = 'Deserto dos Condenados';
@@ -54,6 +55,8 @@ export class WorldModel {
   }
 
   startRun(selection = {}, purchases = {}) {
+    this.stage = STAGES[selection.map] ? selection.map : 'desert';
+    this.stageName = STAGES[this.stage].name;
     this.mode = selection.mode === 'free' ? 'free' : 'campaign';
     this.upgrades.damage = 0;
     this.champion = CHAMPIONS[selection.champion] ? selection.champion : 'joao';
@@ -131,6 +134,7 @@ export class WorldModel {
 
   updateTime(delta) {
     if (!this.isLocked || this.phase !== 'playing') return;
+    this.visualTime += delta;
     // O relógio da campanha espera o confronto com qualquer chefe ativo.
     if (!this.enemies.some(enemy => enemy.boss)) this.elapsed += delta;
     if (this.mode === 'campaign' && this.elapsed >= 900) {

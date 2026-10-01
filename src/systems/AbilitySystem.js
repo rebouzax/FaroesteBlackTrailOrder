@@ -17,12 +17,15 @@ export class AbilitySystem {
   }
   damage(enemy,damage,push=0) {
     if (enemy.hp<=0) return;
-    enemy.hp-=damage*20/(20+enemy.armor); this.view.hitEnemy(enemy.object);
+    enemy.hp-=damage*20/(20+enemy.armor);
+    // Continuous auras must not restart hurt poses every rendered frame.
+    const showImpact=this.model.visualTime >= (enemy.nextImpactAt || 0);
+    if(showImpact){this.view.hitEnemy(enemy.object);enemy.nextImpactAt=this.model.visualTime+.18;}
     if (push) {
       const dx=enemy.x-this.view.camera.position.x,dz=enemy.z-this.view.camera.position.z,d=Math.hypot(dx,dz)||1;
       enemy.knockX=dx/d;enemy.knockZ=dz/d;enemy.knockback=enemy.boss?push*.35:push;
     }
-    if (this.impacts.length<64) this.impacts.push({x:enemy.x,y:enemy.y+1,z:enemy.z,age:0});
+    if (showImpact && this.impacts.length<64) this.impacts.push({x:enemy.x,y:enemy.y+1,z:enemy.z,age:0});
     if (enemy.hp<=0) this.game.killEnemy(enemy);
   }
   fire(target,stats,kind='pistol',angle=null) {
@@ -39,6 +42,15 @@ export class AbilitySystem {
     for(const key of Object.keys(this.clocks)) this.clocks[key]-=dt;
     this.primaryClock-=dt;
     const ready=(id,interval)=>{if((this.clocks[id]||0)>0)return false;this.clocks[id]=interval;return true;};
+    if(m.hero.primary==='shotgun'&&this.primaryClock<=0){
+      const target=this.closest(stats.range,true);
+      if(target){
+        const facing=this.view.getPlanarFacing(),angle=Math.atan2(facing.forwardZ,facing.forwardX);
+        const count=m.hero.pellets+Math.min(3,a.doubleShot||0);
+        for(let i=0;i<count;i++)this.fire(target,{damage:stats.damage*(Math.random()<stats.crit?1.7:1),range:stats.range},'shotgun',angle+(i-(count-1)/2)*.085);
+        this.view.fireShotgun();this.primaryClock=m.hero.cooldown/stats.attack;
+      }
+    }
     if(m.hero.primary==='revolver'&&this.primaryClock<=0){
       const target=this.closest(stats.range,true);
       if(target){
@@ -94,7 +106,7 @@ export class AbilitySystem {
       const oldX=shot.x,oldZ=shot.z;shot.age+=dt;
       if(['returningBlade','lunarReturn'].includes(shot.kind)&&shot.age>=shot.range/shot.speed){
         if(!shot.returning){shot.returning=true;shot.hit.clear();}
-        const dx=p.x-shot.x,dz=p.z-shot.z,d=Math.hypot(dx,dz)||1;shot.vx=dx/d*20;shot.vz=dz/d*20;if(d<.7)shot.pierce=0;
+        const dx=p.x-shot.x,dz=p.z-shot.z,d=Math.hypot(dx,dz)||1;shot.vx=dx/d*20;shot.vz=dz/d*20;shot.vy=(1.35-shot.y)/Math.max(.05,d/20);if(d<.7)shot.pierce=0;
       }
       shot.x+=shot.vx*dt;shot.y+=shot.vy*dt;shot.z+=shot.vz*dt;
       const sx=shot.x-oldX,sz=shot.z-oldZ,length=sx*sx+sz*sz||1;
