@@ -1,10 +1,18 @@
 const AUDIO_BASE=import.meta.env?.BASE_URL||'/';
 export class GameAudio {
   constructor() {
+    this.musicVolume=.65;this.effectsVolume=.8;
     this.buffers = {}; this.stepClock = 0; this.musicOffset = 0; this.mode = 'menu'; this.musicPaused = false;
     this.menuTrack = new Audio(`${AUDIO_BASE}audio/menu-seven-graves-west.mp3`);
     this.menuTrack.loop = true; this.menuTrack.volume = .33; this.menuTrack.preload = 'metadata';
     this.menuTrack.play().catch(() => {});
+  }
+  setVolumes(music, effects) {
+    this.musicVolume=Number.isFinite(Number(music))?Math.max(0,Math.min(1,Number(music))):.65;
+    this.effectsVolume=Number.isFinite(Number(effects))?Math.max(0,Math.min(1,Number(effects))):.8;
+    this.menuTrack.volume=.5*this.musicVolume;
+    if(this.gain)this.gain.gain.setTargetAtTime(.55*this.effectsVolume,this.context.currentTime,.03);
+    if(this.musicGain)this.musicGain.gain.setTargetAtTime(.5*this.musicVolume,this.context.currentTime,.03);
   }
   unlock() {
     try {
@@ -13,10 +21,10 @@ export class GameAudio {
         if (!Context) return;
         this.context = new Context();
         this.gain = this.context.createGain();
-        this.gain.gain.value = 0.55;
+        this.gain.gain.value = .55*this.effectsVolume;
         this.gain.connect(this.context.destination);
         this.musicGain = this.context.createGain();
-        this.musicGain.gain.value = .32;
+        this.musicGain.gain.value = .5*this.musicVolume;
         this.musicGain.connect(this.context.destination);
         for (const name of ['shot', 'glass', 'fire', 'level']) {
           fetch(`${AUDIO_BASE}audio/${name}.wav`).then(response => response.arrayBuffer())

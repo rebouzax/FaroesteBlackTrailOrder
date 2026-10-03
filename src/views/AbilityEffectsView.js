@@ -36,7 +36,7 @@ export class AbilityEffectsView {
     });
     this.bottles.count=this.necks.count=Math.min(16,system.bottles.length);
     system.bottles.slice(0,16).forEach((b,i)=>{
-      const t=b.age/.65,x=THREE.MathUtils.lerp(b.fromX,b.x,t),z=THREE.MathUtils.lerp(b.fromZ,b.z,t),y=1.2*(1-t)+Math.sin(t*Math.PI)*3.5;
+      const t=b.age,x=b.x,z=b.z,y=b.y;
       this.put(this.bottles,i,x,y,z,1,1,1,t*8,0,t*5,b.kind==='pirateBomb'?'#763d32':'#779b53');
       const offset=new THREE.Vector3(0,.25,0).applyEuler(new THREE.Euler(t*8,0,t*5));
       this.put(this.necks,i,x+offset.x,y+offset.y,z+offset.z,1,1,1,t*8,0,t*5);

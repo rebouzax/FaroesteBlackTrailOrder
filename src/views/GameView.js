@@ -1,4 +1,6 @@
 import { MineStage } from './MineStage.js';
+import { GhostTownStage } from './GhostTownStage.js';
+import { WeatherView } from './WeatherView.js';
 import { ENEMY_VISUAL_YAW } from '../config/enemyFacing.js';
 import { STAGES } from '../config/stages.js';
 import { GameAudio } from '../services/GameAudio.js';
@@ -85,9 +87,12 @@ export class GameView {
     this.buildCardinals();
     this.audio = new GameAudio();
     this.abilityEffects = new AbilityEffectsView(this.world);
+    this.weatherView = new WeatherView(this.scene);
     this.revolver = this.createRevolver();
     this.camera.add(this.revolver);
     this.revolver.visible = false;
+    this.leftRevolver=this.createRevolver();this.leftRevolver.visible=false;this.camera.add(this.leftRevolver);
+    this.leftRecoil=0;
     this.pistolEffect = this.createRevolver();
     this.camera.add(this.pistolEffect);
     this.pistolEffect.visible = false;
@@ -103,7 +108,7 @@ export class GameView {
     this.viewModel = viewModel;
     this.root.addEventListener('pointerdown', () => this.audio.unlock(), { passive: true });
     for (const collider of this.colliderSpecs) {
-      if (collider.kind === 'box') this.viewModel.addBoxCollider(collider.minX, collider.maxX, collider.minZ, collider.maxZ);
+      if (collider.kind === 'box') this.viewModel.addBoxCollider(collider.minX, collider.maxX, collider.minZ, collider.maxZ,collider.minY,collider.maxY);
       else this.viewModel.addCollider(collider.x, collider.z, collider.radius);
     }
     this.root.innerHTML = `
@@ -244,7 +249,7 @@ export class GameView {
     this.audio.play('level', .35);
     this.buttons.cardsList.innerHTML = offers.map(id => {
       const card = ABILITIES[id], level = this.viewModel.model.abilities[id] + 1;
-      return `<button class="ability-card color-${card.color}" type="button" data-card="${id}"><small>${card.suit} · NÍVEL ${level}/${abilityMaxLevel(id)}</small><b>${card.icon}</b><strong>${card.name}</strong><span>${cardDescription(id, level, this.viewModel.model.attributes().attack)}</span></button>`;
+      return `<button class="ability-card color-${card.color}" type="button" data-card="${id}"><small>${card.suit} · NÍVEL ${level}/${abilityMaxLevel(id)}</small><b>${card.icon}</b><strong>${card.name}</strong><span>${cardDescription(id, level, this.viewModel.model.attributes().attack,this.viewModel.model.champion)}</span></button>`;
     }).join('');
     this.buttons.cards.hidden = false;
   }
@@ -495,16 +500,16 @@ export class GameView {
     this.viewModel?.addCollider(x, z, radius);
   }
 
-  addStaticBoxCollider(minX, maxX, minZ, maxZ) {
-    const collider = { kind: 'box', minX, maxX, minZ, maxZ };
+  addStaticBoxCollider(minX, maxX, minZ, maxZ,minY=0,maxY=4) {
+    const collider = { kind: 'box', minX, maxX, minZ, maxZ,minY,maxY };
     this.colliderSpecs.push(collider);
-    this.viewModel?.addBoxCollider(minX, maxX, minZ, maxZ);
+    this.viewModel?.addBoxCollider(minX, maxX, minZ, maxZ,minY,maxY);
   }
 
   addFootprint(scene, inset = 0) {
     scene.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(scene);
-    this.addStaticBoxCollider(bounds.min.x + inset, bounds.max.x - inset, bounds.min.z + inset, bounds.max.z - inset);
+    this.addStaticBoxCollider(bounds.min.x + inset, bounds.max.x - inset, bounds.min.z + inset, bounds.max.z - inset,bounds.min.y,bounds.max.y);
   }
 
   buildProceduralWagons() {
@@ -666,6 +671,7 @@ export class GameView {
       progress.push(this.loadCorpse(x, z, rotation));
     for (const [type, filename] of [
       ['snake','snake.glb'],['scorpion','scorpion.glb'],['spider','spider.glb'],['ghost','ghost.glb'],['ghoul','ghoul.glb'],['miner','miner.glb'],
+      ['cerberus','city-cerberus.glb'],['devourer','city-devourer.glb'],['chainedDemon','city-chained-demon.glb'],
       ['bat', 'bat.glb'], ['dog', 'dog.glb'], ['skeleton', 'skeleton.glb'], ['marshal', 'marshal.glb'],
       ['zombie', 'lowpoly_zombie.glb'],
       ['bonewalker', 'low_poly_psx_skeleton.glb'], ['wendigo', 'stylized_low-poly_wendigo.glb'],
@@ -794,7 +800,7 @@ export class GameView {
           : convert(child.material);
       });
       const flight = type === 'bat';
-      const desired = {snake:.65,scorpion:.6,spider:.7}[type] || (type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3);
+      const desired = {snake:.65,scorpion:.6,spider:.7,cerberus:1.55,devourer:1.7,chainedDemon:2}[type] || (type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3);
       const normalized = placeAsset(scene, { size:desired,dimension:flight?'width':'height',yaw:ENEMY_VISUAL_YAW[type]||0 });
       if(flight) normalized.position.y -= new THREE.Box3().setFromObject(normalized).getSize(new THREE.Vector3()).y/2;
       const wrapper = new THREE.Group();wrapper.add(normalized);
@@ -817,13 +823,22 @@ export class GameView {
     this.world.add(root);
     const mixer = new THREE.AnimationMixer(body);
     const preferred = type === 'bat' ? /fly/i : /run|walk/i;
-    const clip = template.animations.find((item) => preferred.test(item.name)) || template.animations[0];
+    const clip = template.animations.find((item) => preferred.test(item.name)) || template.animations.find(item=>/idle|hover/i.test(item.name)) || template.animations.find(item=>!/death|die|pose|empty/i.test(item.name));
     const walk = clip ? mixer.clipAction(clip).play() : null;
     const attackClip = template.animations.find(item => /attack|punch|bite|strike/i.test(item.name));
     const hurtClip = template.animations.find(item => /hurt|damage|hit|impact/i.test(item.name));
-    this.enemyActors.set(root, { mixer, body, walk, attack: attackClip ? mixer.clipAction(attackClip) : null,
+    mixer.update(0);root.updateMatrixWorld(true);
+    const flight=type==='bat'||type==='ghost',bounds=new THREE.Box3().setFromObject(root,true);
+    if(!flight)body.position.y-=(bounds.min.y-y)/scale;
+    const height=bounds.max.y-bounds.min.y;
+    const bodyRadius=THREE.MathUtils.clamp(Math.max(bounds.max.x-bounds.min.x,bounds.max.z-bounds.min.z)*.42,boss ? .85 : .35,boss?3.2:1.1);
+    const actor={ mixer, body, walk, bodyRadius, attack: attackClip ? mixer.clipAction(attackClip) : null,
       hurt: hurtClip ? mixer.clipAction(hurtClip) : null, flash: 0, hitTime: 0, attackTime: 0, scale,
-      baseY: body.position.y, phase: Math.random() * Math.PI * 2, deformables });
+      baseY: body.position.y, phase: Math.random() * Math.PI * 2, deformables,flight,height,bottom:flight?bounds.min.y-y:0,groundClock:0,groundOffset:0 };
+    this.enemyActors.set(root,actor);
+    mixer.addEventListener('finished',event=>{
+      if(event.action===actor.pose){event.action.stop();actor.pose=null;actor.walk?.reset().fadeIn(.15).play();}
+    });
     return root;
   }
 
@@ -886,10 +901,20 @@ export class GameView {
       }
       position.needsUpdate=true;
     }
-    actor.body.position.y = actor.baseY + (actor.hitTime > 0 ? -0.11 * Math.sin(actor.hitTime / 0.28 * Math.PI) : Math.abs(stride) * 0.07);
+    actor.body.position.y = actor.baseY + actor.groundOffset + (actor.flight ? Math.sin(actor.phase*.5)*.09 : 0);
     actor.body.rotation.z = (actor.hitTime > 0 ? 0.18 * Math.sin(actor.hitTime / 0.28 * Math.PI) : stride * 0.07) * (object.scale.x < 2 ? 1 : 0.6);
     actor.body.rotation.x = actor.attackTime > 0 ? -Math.sin(actor.attackTime / 0.35 * Math.PI) * 0.28 : Math.sin(actor.phase * 0.5) * 0.025;
     object.scale.setScalar(actor.scale * (actor.flash > 0 ? 1.045 : 1));
+    if(!actor.flight){
+      actor.groundClock-=delta;
+      if(actor.groundClock<=0){
+        // Evaluate the animated mesh, not its bind-pose bounding box.
+        actor.groundClock=.1;object.updateMatrixWorld(true);
+        const bounds=new THREE.Box3().setFromObject(actor.body,true);
+        actor.groundOffset-=(bounds.min.y-object.position.y)/object.scale.y;
+        actor.body.position.y=actor.baseY+actor.groundOffset;
+      }
+    }
   }
 
   hitEnemy(object) {
@@ -897,14 +922,20 @@ export class GameView {
     if (!actor) return;
     actor.flash = 0.15;
     actor.hitTime = 0.28;
-    if (actor.hurt) { actor.hurt.reset().setLoop(THREE.LoopOnce, 1).play(); actor.hurt.clampWhenFinished = true; }
+    if (actor.hurt)this.playEnemyPose(actor,actor.hurt);
   }
 
   attackEnemy(object) {
     const actor = this.enemyActors.get(object);
     if (!actor) return;
     actor.attackTime = 0.35;
-    if (actor.attack) { actor.attack.reset().setLoop(THREE.LoopOnce, 1).play(); actor.attack.clampWhenFinished = true; }
+    if (actor.attack)this.playEnemyPose(actor,actor.attack);
+  }
+
+  playEnemyPose(actor,action) {
+    if(actor.pose&&actor.pose!==action)actor.pose.stop();
+    actor.walk?.fadeOut(.1);actor.pose=action;
+    action.reset().setEffectiveWeight(1).setLoop(THREE.LoopOnce,1).fadeIn(.08).play();action.clampWhenFinished=false;
   }
 
   removeEnemy(object) {
@@ -964,14 +995,18 @@ export class GameView {
 
   removeLoot(object) { this.world.remove(object); }
 
-  addProjectile(x, y, z) {
-    const object = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), new THREE.MeshBasicMaterial({ color: '#ef9e65' }));
+  addProjectile(x, y, z, kind='magic') {
+    const object = new THREE.Group();
+    if(kind==='axe'){
+      const handle=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.8,5),this.mat('#66452c'));
+      const blade=new THREE.Mesh(new THREE.BoxGeometry(.4,.25,.08),this.mat('#b1b4b7'));blade.position.set(.16,.28,0);object.add(handle,blade);
+    }else object.add(new THREE.Mesh(new THREE.OctahedronGeometry(.28,0),new THREE.MeshBasicMaterial({color:'#ef9e65'})));
     object.position.set(x, y, z);
     this.world.add(object);
     return object;
   }
 
-  removeProjectile(object) { this.world.remove(object); }
+  removeProjectile(object) { this.world.remove(object);object.traverse(n=>{if(n.isMesh){n.geometry.dispose();if(n.material.isMeshBasicMaterial)n.material.dispose();}}); }
 
   startWhip() {
     this.whipTimer = 0.38;
@@ -1001,13 +1036,16 @@ export class GameView {
     return burst;
   }
 
-  selectStage(id) {
-    this.currentStage=id==='mine'?'mine':'desert';
+  async selectStage(id) {
+    this.currentStage=STAGES[id]?id:'desert';
     const mine=this.currentStage==='mine';
+    const city=this.currentStage==='ghostTown';
     if(mine&&!this.mineStage){this.mineStage=new MineStage(this);this.world.add(this.mineStage.group);}
-    for(const child of this.world.children)child.visible=child===this.abilityEffects.group|| (child===this.mineStage?.group?mine:!mine);
-    for(const child of this.scene.children)if(child!==this.world&&child!==this.camera)child.visible=!mine;
-    this.viewModel.colliders=mine?[...this.mineStage.colliders]:[...this.colliderSpecs];
+    if(city&&!this.cityStage){this.cityStage=new GhostTownStage(this);this.world.add(this.cityStage.group);}
+    await (mine?this.mineStage.ready:city?this.cityStage.ready:Promise.resolve());
+    for(const child of this.world.children)child.visible=child===this.abilityEffects.group|| (child===this.mineStage?.group?mine:child===this.cityStage?.group?city:!mine&&!city);
+    for(const child of this.scene.children)if(child!==this.world&&child!==this.camera&&child!==this.weatherView.group)child.visible=!mine;
+    this.viewModel.colliders=mine?[...this.mineStage.colliders]:city?[...this.cityStage.colliders]:[...this.colliderSpecs];
     this.scene.background.set(mine?'#141211':'#111d38');
     this.scene.fog.color.set(mine?'#211c19':'#172640');this.scene.fog.density=mine?.009:.0028;
     Object.assign(this.psx.getEffect('fog').settings,{color:mine?'#211c19':'#172640',density:mine?.009:.0025});
@@ -1018,7 +1056,9 @@ export class GameView {
 
   setChampion(champion) {
     this.weapon.visible = champion === 'joao';
-    this.revolver.visible = champion === 'maria';
+    this.revolver.visible = champion === 'maria'||champion==='ana';
+    this.leftRevolver.visible=champion==='ana';
+    this.recoil=this.leftRecoil=this.pistolFlash=0;
     this.shotgun.visible = champion === 'labuta';
   }
 
@@ -1036,7 +1076,7 @@ export class GameView {
 
   fireShotgun(){this.shotgunKick=1;this.audio.shotgun();}
 
-  fireRevolver() { this.recoil = 1; this.audio.play('shot', .65, .94 + Math.random()*.07); }
+  fireRevolver(hand='right') { if(hand==='left')this.leftRecoil=1;else this.recoil=1;this.audio.play('shot', .65, .94 + Math.random()*.07); }
   fireAbilityPistol() { this.pistolFlash = .3; this.audio.play('shot', .35, 1.08); }
 
   async loadRevolver() {
@@ -1054,7 +1094,7 @@ export class GameView {
         child.material = Array.isArray(child.material) ? child.material.map(convert) : convert(child.material);
         child.renderOrder = 5;
       });
-      for (const weapon of [this.revolver,this.pistolEffect]) {
+      for (const weapon of [this.revolver,this.leftRevolver,this.pistolEffect]) {
         const flash = weapon.userData.flash;
         for (const child of [...weapon.children]) if (child !== flash) { weapon.remove(child); child.geometry?.dispose(); }
         weapon.add(model.clone(true));
@@ -1192,7 +1232,7 @@ export class GameView {
     if (!bosses.length) return;
     this.camera.updateMatrixWorld();
     const width = this.root.clientWidth, height = this.root.clientHeight;
-    const labels = { mineGhoul:'GHOUL',mineWendigo:'WENDIGO',minerGeneral:'GENERAL MINEIRO', giantBat: 'MORCEGO GIGANTE', fireChupacabra: 'CHUPACABRA DE FOGO', shadowMarshal: 'MARECHAL DAS SOMBRAS' };
+    const labels = {cityCerberus:'CERBERUS',cityDevourer:'DEVORADOR DE ALMAS',cityChainedDemon:'CARRASCO ACORRENTADO', mineGhoul:'GHOUL',mineWendigo:'WENDIGO',minerGeneral:'GENERAL MINEIRO', giantBat: 'MORCEGO GIGANTE', fireChupacabra: 'CHUPACABRA DE FOGO', shadowMarshal: 'MARECHAL DAS SOMBRAS' };
     for (const enemy of bosses) {
       let node = this.bossBarNodes.get(enemy);
       if (!node) {
@@ -1203,7 +1243,7 @@ export class GameView {
         this.buttons.bossBars.append(node);
         this.bossBarNodes.set(enemy, node);
       }
-      const point = new THREE.Vector3(enemy.x, enemy.y + (enemy.visual === 'bat' ? 3.6 : 4.8), enemy.z);
+      const point = new THREE.Vector3(enemy.x, enemy.y + (enemy.bottom||0)+(enemy.height||4.5)+.3, enemy.z);
       point.project(this.camera);
       const distance = Math.hypot(enemy.x-this.camera.position.x, enemy.z-this.camera.position.z);
       const visible = distance <= 22 && point.z < 1 && point.z > -1 && Math.abs(point.x) < .95 && Math.abs(point.y) < .95;
@@ -1218,6 +1258,11 @@ export class GameView {
   update(delta, model) {
     this.audio.syncMusic(model.phase === 'menu' ? 'menu' : (model.stage||'desert'), document.hidden || (model.phase === 'playing' && !model.isLocked) || ['defeat','victory'].includes(model.phase));
     this.mineStage?.update(model.visualTime);
+    this.cityStage?.update(model.visualTime);
+    this.weatherView.update(this.viewModel.weather.state,this.camera.position,model.visualTime,model.stage);
+    const sand=this.viewModel.weather.state.kind==='sand',mine=model.stage==='mine';
+    this.scene.fog.color.set(sand?'#73614b':mine?'#211c19':'#172640');this.scene.fog.density=sand ? .028 : mine ? .009 : .0028;
+    Object.assign(this.psx.getEffect('fog').settings,{color:sand?'#73614b':mine?'#211c19':'#172640',density:this.scene.fog.density});
     this.audio.footsteps(delta, model.walking, model.attributes().speed);
     this.abilityEffects.update(this.viewModel.abilitySystem, model, this.camera.position);
     this.crackTimer = Math.max(0, this.crackTimer - delta);
@@ -1238,6 +1283,10 @@ export class GameView {
     const gait=this.weaponPhase,weight=this.walkBlend;
     this.revolver.position.set(.36+Math.sin(gait)*.022*weight,-.34+Math.cos(gait*2)*.015*weight,-.64+this.recoil*.09);
     this.revolver.rotation.set(this.recoil*.25+Math.cos(gait*2)*.025*weight,Math.sin(gait)*.035*weight,-Math.sin(gait)*.045*weight);
+    this.leftRecoil=Math.max(0,this.leftRecoil-delta*6);
+    this.leftRevolver.position.set(-.36+Math.sin(gait+Math.PI)*.022*weight,-.34+Math.cos(gait*2+Math.PI)*.015*weight,-.64+this.leftRecoil*.09);
+    this.leftRevolver.rotation.set(this.leftRecoil*.25+Math.cos(gait*2+Math.PI)*.025*weight,Math.sin(gait+Math.PI)*.035*weight,-Math.sin(gait+Math.PI)*.045*weight);
+    this.leftRevolver.userData.flash.visible=this.leftRecoil>.76;
     this.shotgunKick=Math.max(0,(this.shotgunKick||0)-delta*3.5);
     const kick=this.shotgunKick;
     this.shotgun.position.set(.29+Math.sin(gait)*.019*weight,-.34+Math.cos(gait*2)*.015*weight-kick*.035,-.72+kick*.18);

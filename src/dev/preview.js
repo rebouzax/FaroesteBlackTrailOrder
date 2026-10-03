@@ -7,10 +7,18 @@ export async function preview(game) {
   const kind=new URLSearchParams(location.search).get('preview');
   if(kind==='menus'){
     const screen=new URLSearchParams(location.search).get('screen');
-    if(['home','modes','champion','map','arsenal','bestiary','merchant'].includes(screen))game.menuViewModel.navigate(screen);
+    if(['home','modes','champion','map','arsenal','bestiary','merchant','settings'].includes(screen))game.menuViewModel.navigate(screen);
     return;
   }
   await Promise.all([view.assetsReady,view.weaponReady]);
+  if(kind==='city'){
+    await view.selectStage('ghostTown');model.startRun({map:'ghostTown',mode:'free'});model.phase='preview';view.hideMenu();
+    view.camera.position.set(0,1.68,170);view.camera.lookAt(0,1.68,-200);
+    const weather=new URLSearchParams(location.search).get('weather');
+    if(['rain','sand','tornado'].includes(weather)){game.viewModel.weather.state.kind=weather;if(weather==='tornado')game.viewModel.weather.state.tornado={x:6,z:145};}
+    view.renderer.setAnimationLoop(()=>{model.visualTime+=1/60;view.update(1/60,model);view.psx.render(1/60);});
+    return;
+  }
   model.startRun({champion:kind==='revolver'?'maria':'joao'});
   model.phase='preview';view.hideMenu();view.setChampion(model.champion);
   let bento=null;
@@ -23,7 +31,7 @@ export async function preview(game) {
       bento=view.addEventObject('merchant',0,0);
       view.camera.position.set(0,1.5,4.8);view.camera.lookAt(0,1.1,0);
     }else if(kind==='enemies'){
-      const all=['snake','scorpion','spider','miner','zombie','ghost','ghoul','wendigo'];
+      const all=['snake','scorpion','spider','miner','zombie','ghost','ghoul','wendigo','cerberus','devourer','chainedDemon'];
       const chosen=new URLSearchParams(location.search).get('actor');
       const names=all.includes(chosen)?[chosen]:all;
       names.forEach((name,i)=>{const actor=view.addEnemy(name,(i-(names.length-1)/2)*3,0,0);if(actor)actor.rotation.y=Number(new URLSearchParams(location.search).get('yaw'))||0;});
@@ -39,6 +47,12 @@ export async function preview(game) {
   }
   view.renderer.setAnimationLoop(()=>{
     const t=performance.now()/1000;
+    model.visualTime+=1/60;
+    for(const actor of view.enemyActors.keys())view.updateEnemy(actor,1/60);
+    if(kind==='enemies'&&Math.floor(t)!==view.lastGroundReport){
+      view.lastGroundReport=Math.floor(t);
+      view.root.dataset.groundReport=JSON.stringify([...view.enemyActors.keys()].map(actor=>({floor:actor.position.y,lowest:new THREE.Box3().setFromObject(actor,true).min.y})));
+    }
     if(bento)view.updateEventObject(bento,'merchant',t);
     view.update(1/60,model);view.psx.render(1/60);
   });

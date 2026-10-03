@@ -2,7 +2,7 @@
 
 Continuação de **Faroeste Survivors** em formato **FPS bullet-hell**, com gráficos inspirados no PlayStation original e uma mistura de faroeste com fantasia sombria. Feito para navegador com **Three.js**, **Vite** e arquitetura **MVVM**, com controles para computadores, tablets e smartphones.
 
-O projeto está em desenvolvimento. Atualmente conta com duas fases, três campeões, ataques automáticos, evolução por cartas e uma campanha com desbloqueios persistentes.
+O projeto está em desenvolvimento. Atualmente conta com três fases, quatro campeões, ataques automáticos, evolução por cartas e uma campanha com desbloqueios persistentes.
 
 ## O jogo atual
 
@@ -14,6 +14,10 @@ O projeto está em desenvolvimento. Atualmente conta com duas fases, três campe
 - **Chefes:** o relógio da campanha e das submissões pausa durante o confronto. A barra de vida acompanha o chefe e aparece quando o jogador se aproxima.
 - **Armas na tela:** chicote, revólver e escopeta com animações de movimentação e ataque, sem mãos visíveis. O chicote empurra os inimigos atingidos.
 - **Áudio:** trilhas por fase, passos de botas, disparos e efeitos de habilidades.
+- **Física de projéteis:** colisão contínua em 3D com inimigos e cenário, dispersão e perda de dano da escopeta com distância, arremessos em arco, bumerangues com retorno gradual e balas mágicas com atração limitada ao alvo.
+- **Colisão da horda:** corpos proporcionais ao modelo, desvio entre vizinhos, separação de sobreposições e respeito aos obstáculos. Chefes têm maior resistência ao deslocamento.
+- **Sinergias de cartas:** Disparo Duplicado repete ataques completos de armas e habilidades de projéteis, incluindo salvas de escopeta, bombas, magias e bumerangues. Bônus de dano, alcance, cadência e crítico também interagem com os ataques compatíveis. Chicote, auras e ferraduras não são duplicados.
+- **Clima:** chuva com raios sinalizados no chão, tempestades de areia que reduzem a visibilidade e pequenos tornados que atraem e ferem jogador e inimigos próximos. Os efeitos se adaptam à altura das galerias da Mina.
 
 ### Fases
 
@@ -21,8 +25,9 @@ O projeto está em desenvolvimento. Atualmente conta com duas fases, três campe
 | --- | --- | --- |
 | I — Deserto dos Condenados | Estrada sob a lua, casas abandonadas, postes, cercas, cactos, covas e cânions | Morcegos, cães, esqueletos e mortos da fronteira. Chefes: Morcego Gigante, Chupacabra de Fogo e Marechal das Sombras. |
 | II — Mina dos Condenados | Caverna de mineração com trilhos, objetos de mina e ouro amaldiçoado | Cobras, escorpiões, aranhas, mineiros, zumbis e fantasmas. Chefes: Ghoul, Wendigo da Mina e General Mineiro. |
+| III — Cidade Fantasma | Mapa maior que o Deserto, com avenida, ruas laterais, 43 construções, saloons, igreja, cercas, cemitério, grama seca e lamparinas | Fantasmas, cobras, morcegos, escorpiões, ghouls, zumbis e esqueletos que arremessam machados. Chefes: Cerberus, Devorador de Almas e Carrasco Acorrentado. |
 
-As fases III e IV ainda não estão implementadas. Sete novos modelos foram inspecionados como candidatos a bosses dessas fases; alguns precisam de ajustes de texturas, rigs ou recuperação de animações. Eles ainda não participam das partidas. Consulte o [catálogo de bosses futuros](docs/assets/future-bosses.md).
+A fase IV ainda não está implementada. Três dos sete modelos de bosses fornecidos já foram integrados à Cidade Fantasma; os demais continuam reservados para futuras fases. Consulte o [catálogo de bosses](docs/assets/future-bosses.md).
 
 ### Campeões
 
@@ -31,12 +36,15 @@ As fases III e IV ainda não estão implementadas. Sete novos modelos foram insp
 | João Vaqueiro | Chicote | Disponível no início |
 | Maria Bonita | Revólver | Completar a submissão de abater 10 morcegos no Deserto |
 | Labuta | Escopeta | Completar a submissão de recolher 8 moedas no Deserto |
+| Ana Tiro Certo | Duas pistolas, com tiros e recuo alternados | Concluir os 15 minutos da Cidade Fantasma e derrotar seus três chefes |
+
+Todas as cartas liberadas podem integrar o deck de qualquer campeão. A **Pistola do Sertão** adapta sua apresentação: João e Labuta usam uma arma auxiliar; Maria dispara uma rajada com seu próprio revólver; Ana ganha dano e cadência nas duas pistolas existentes, sem invocar uma terceira arma. As descrições no Arsenal e na escolha de nível refletem o campeão selecionado.
 
 ## Campanha e preparação
 
 Um perfil novo começa com **João Vaqueiro**, o **Deserto dos Condenados**, o bestiário vazio e seis cartas liberadas: Pistola do Sertão, Molotov, Coração de Vaqueiro, Ferraduras Malditas, Disparo Duplicado e Olho de Chumbo.
 
-Concluir submissões e derrotar chefes libera campeões, cartas e acesso ao mercador. Para abrir a Mina, é necessário sobreviver aos 15 minutos do Deserto e derrotar seus três chefes. A descoberta de criaturas no bestiário acontece ao derrotá-las na campanha.
+Concluir submissões e derrotar chefes libera campeões, cartas e acesso ao mercador. Para abrir a Mina, é necessário sobreviver aos 15 minutos do Deserto e derrotar seus três chefes. Concluir a Mina libera a Cidade Fantasma, que segue a mesma estrutura de 15 minutos e três chefes. A descoberta de criaturas no bestiário acontece ao derrotá-las na campanha.
 
 O fluxo dos menus é **Novo Jogo → Modo → Campeão → Mapa → Começar Partida**. Na seleção de mapa, também estão disponíveis:
 
@@ -57,6 +65,7 @@ O progresso e as configurações são salvos no **armazenamento local do navegad
 | Atacar | Automático, na direção da visão e dentro do alcance | Automático |
 | Pausar / liberar cursor | Esc | Botão Ⅱ |
 | Ajustar sensibilidade | Configuração → sensibilidade do mouse | Configuração → sensibilidade do toque |
+| Ajustar áudio | Configuração → volumes de música e efeitos (0–100%) | Mesmos controles, com ajustes salvos no aparelho |
 
 Ao começar uma partida em dispositivo móvel, o jogo solicita **tela cheia e orientação horizontal**. Se o navegador não permitir travar a orientação, um aviso pede para girar o aparelho e a simulação pausa enquanto a tela estiver em retrato. A disponibilidade de tela cheia depende do navegador. No iPhone/iPad, use **Compartilhar → Adicionar à Tela de Início** e abra pelo ícone para jogar sem a barra do navegador.
 
@@ -93,7 +102,11 @@ O build é gerado em `dist/`. Os modelos e as músicas utilizados pelo jogo fica
 | `src/views/GameView.js` | Cena Three.js, câmera, armas, inimigos, animações e HUD |
 | `src/views/MenuView.js` | Interface dos menus e catálogos paginados |
 | `src/views/MineStage.js` | Construção do cenário da Mina |
+| `src/views/GhostTownStage.js` | Construção da Cidade Fantasma e colisões das construções |
 | `src/views/AbilityEffectsView.js` | Efeitos visuais das habilidades |
+| `src/systems/ProjectilePhysics.js` | Interseção contínua de trajetórias com alvos e obstáculos em 3D |
+| `src/systems/EnemySeparation.js` | Colisores da horda, desvio entre vizinhos e separação dos corpos |
+| `src/systems/WeatherSystem.js` / `src/views/WeatherView.js` | Eventos climáticos, dano, atração e efeitos PSX |
 | `src/services/GameAudio.js` | Músicas e efeitos sonoros |
 | `src/config/` | Campeões, fases, habilidades, progressão e orientação dos inimigos |
 | `src/app/GameApplication.js` | Composição e inicialização da aplicação |
@@ -107,6 +120,7 @@ O pipeline PSX combina resolução virtual reduzida, dithering, paleta limitada,
 | Menu | Seven Graves West | Loop da faixa |
 | Deserto | Iron Boots on Barren Ground | Loop de 00:00 até 02:46 |
 | Mina | The Prospector's Last Strike | Loop de 00:00 até 02:46 |
+| Cidade Fantasma | Iron Boots on Barren Ground (trilha reutilizada) | Loop de 00:00 até 02:46 |
 
 Os arquivos usados pelo jogo estão em `public/audio/`.
 
@@ -127,3 +141,4 @@ O Vite utiliza `base: './'` e os recursos da aplicação respeitam esse caminho,
 - Pipeline visual baseado em **threejs-psx-shader**, com ajustes para o FPS.
 - Modelos 3D e músicas fornecidos para o projeto.
 - Logo, fundo dos menus e retratos adaptados à identidade de faroeste e fantasia sombria. O [registro do retrato do Bento](docs/assets/bento-portrait.md) inclui o prompt utilizado.
+- O [registro de Ana Tiro Certo](docs/assets/ana-character-art.md) documenta o retrato gerado com ImageGen e seu prompt final.

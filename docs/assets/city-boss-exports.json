@@ -1,0 +1,29 @@
+[
+  {
+    "source": "cerberus_v002.blend",
+    "sourceSha256": "abd30c21089f64e55e603192614e8b5c6c53839eebd851cf89b04edd840b649f",
+    "output": "city-cerberus.glb",
+    "outputSha256": "44345d9d1de1612ce22e1c2b2d8faf8990c83ed5766220e77d203bfa6c1dddb0",
+    "texture": "cerberus_texture.png",
+    "role": "city boss",
+    "license": "user-supplied; unspecified"
+  },
+  {
+    "source": "gob_bod4_non5_rig3_a10.blend",
+    "sourceSha256": "41d4add1ea27d82e9df2cc46337eb49e66dd781885528d7ad1e9e54deddaebaf",
+    "output": "city-devourer.glb",
+    "outputSha256": "c97864f1e22603c8e2da4142168668afd0803ff7f1e291d58c26cc51f0d10761",
+    "texture": "materialtexture_skullflesh1.png",
+    "role": "city boss",
+    "license": "user-supplied; unspecified"
+  },
+  {
+    "source": "ChainedDemon.blend",
+    "sourceSha256": "e653981f918120614d70a4cd3ddc2d976985d8bdde65f3cca5304d1eada151fc",
+    "output": "city-chained-demon.glb",
+    "outputSha256": "aaf8158881ed8c9afd3f236ba66c9f1a532c3cc9cee34ab395caab2c06f5cf0c",
+    "texture": "diffuse.png",
+    "role": "city boss",
+    "license": "user-supplied; unspecified"
+  }
+]

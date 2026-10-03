@@ -1,0 +1,62 @@
+[
+  {
+    "filename": "city-cerberus.glb",
+    "bytes": 333504,
+    "sha256": "44345d9d1de1612ce22e1c2b2d8faf8990c83ed5766220e77d203bfa6c1dddb0",
+    "skins": 1,
+    "textures": 1,
+    "animations": [
+      "Attack",
+      "die",
+      "hit",
+      "Idle",
+      "Walk"
+    ],
+    "finiteFloatAccessors": true
+  },
+  {
+    "filename": "city-devourer.glb",
+    "bytes": 1185568,
+    "sha256": "c97864f1e22603c8e2da4142168668afd0803ff7f1e291d58c26cc51f0d10761",
+    "skins": 1,
+    "textures": 1,
+    "animations": [
+      "Death_FromHover",
+      "Death_FromIdle1",
+      "Flinch_Flying",
+      "Flinch_Idle",
+      "Fly_Land1",
+      "Fly_Take-off1",
+      "FlyTest1",
+      "FlyTest2",
+      "Hover_Attack1",
+      "Hover_Attack2",
+      "Hover_Long1",
+      "IdleAnimation1",
+      "IdlePose1",
+      "Run1",
+      "Run2",
+      "RunStart",
+      "RunStop",
+      "Silly1",
+      "Sleeping",
+      "T-Pose",
+      "WakeUp"
+    ],
+    "finiteFloatAccessors": true
+  },
+  {
+    "filename": "city-chained-demon.glb",
+    "bytes": 466000,
+    "sha256": "aaf8158881ed8c9afd3f236ba66c9f1a532c3cc9cee34ab395caab2c06f5cf0c",
+    "skins": 1,
+    "textures": 1,
+    "animations": [
+      "Attack",
+      "Hit",
+      "Idle",
+      "Walk"
+    ],
+    "finiteFloatAccessors": true
+  }
+]

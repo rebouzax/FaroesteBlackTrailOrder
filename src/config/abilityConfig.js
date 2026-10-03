@@ -99,13 +99,15 @@ export function abilityStats(id, level) {
   if (id === "crowstorm") return { crit: 0.05 * level, speed: 0.04 * level };
   return { health: 20 };
 }
-export function cardDescription(id, nextLevel, attackRate = 1) {
+export function cardDescription(id, nextLevel, attackRate = 1, champion = 'joao') {
   const stats = abilityStats(id, nextLevel);
   if (FRONTIER_CARDS[id]?.stats || !['doubleShot','pistol','molotov','horseshoe','ghostShot','requiem','silverRain','lantern','soulHarvest','boneStorm','ironWill','lastStand','bulwark','inferno','silverStorm','ironCharm','deadeye','bloodOath','heart'].includes(id)) {
     const labels = { damage:'dano',health:'vida máxima',armor:'armadura',range:'alcance (m)',haste:'velocidade de ataque',crit:'chance crítica',speed:'velocidade',magnet:'atração (m)',fortune:'moedas e XP',regen:'regeneração/s',heal:'cura',cooldown:'intervalo (s)' };
     return Object.entries(stats).map(([key,value]) => { const percent=['haste','crit','speed','fortune'].includes(key); return `${Number((value*(percent?100:1)).toFixed(2))}${percent?'%':''} ${labels[key]||key}`; }).join(' · ');
   }
-  if(id==='doubleShot')return `+${stats.count} projéteis da arma principal por ataque, lançados em sequência (máximo +6). Não afeta golpes corpo a corpo.`;
+  if(id==='doubleShot')return `+${stats.count} disparos extras em sequência (máximo +6): arma, Pistola do Sertão, magias, bumerangues e bombas. A escopeta repete a salva inteira; Ana repete o par. Não duplica chicote, auras ou ferraduras.`;
+  if(id==='pistol'&&champion==='ana')return `Fortalece as duas pistolas de Ana: +${(stats.damage*.35).toFixed(2)} de dano por bala e +${nextLevel*8}% de cadência. Usa as armas existentes e combina com Disparo Duplicado.`;
+  if(id==='pistol'&&champion==='maria')return `Maria faz uma rajada com seu próprio revólver: ${stats.damage} de dano base a cada ${(stats.cooldown/attackRate).toFixed(2)} s. Combina com Disparo Duplicado.`;
   if (id === "pistol")
     return `${stats.damage} de dano · um tiro a cada ${Math.max(0.15, stats.cooldown / attackRate).toFixed(2)} s.`;
   if (id === "molotov")

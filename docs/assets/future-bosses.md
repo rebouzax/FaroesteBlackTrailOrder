@@ -2,7 +2,11 @@
 
 Sete arquivos `.blend` fornecidos pelo jogador foram inspecionados com Blender 5.2.2, sem salvar alterações nos originais. O utilitário `game-dev` não está instalado; a inspeção usou a API local do Blender. O relatório `future-bosses.json` registra hashes, malhas, rigs, ações e referências de textura.
 
-Estes modelos ainda não estão integrados às ondas, ao bestiário ou aos chefes das duas fases atuais. São candidatos a bosses; a possibilidade de virarem inimigos comuns depende das futuras fases III e IV. Nenhum desbloqueio novo foi definido.
+Cerberus, o modelo `gob_bod4_non5_rig3_a10` (Devorador de Almas) e ChainedDemon (Carrasco Acorrentado) estão integrados como chefes da fase III, Cidade Fantasma. Os demais continuam reservados para futuras fases. Nenhum desses novos bosses participa das ondas de inimigos comuns.
+
+As exportações preservam os arquivos originais e usam texturas embutidas de até 512 pixels. Os slots antigos de animação sem tipo de alvo foram convertidos para objetos, recuperando as cinco ações do Cerberus. `city-boss-exports.json` registra origem/texturas/hashes; `city-glb-inspection.json` registra inspeção dos GLBs, rigs, animações, imagens embutidas e valores numéricos finitos. A importação visual em Three.js é conferida separadamente.
+
+A ação original do ChainedDemon referenciava ossos de outro rig e exportava apenas transformações constantes. Foram criados clips próprios `Idle`, `Walk`, `Attack` e `Hit`, com os braços baixos e movimento de pernas, tronco e cabeça, no arquivo GLB derivado. O original `.blend` foi preservado. O eixo frontal do Devorador foi corrigido em +90° no wrapper visual do jogo.
 
 | Fonte | Situação observada |
 | --- | --- |

@@ -25,6 +25,14 @@ export class MenuViewModel {
   applySettings() {
     this.gameRoot.classList.toggle('menu-effects-off', !this.model.settings.effects);
     this.gameRoot.classList.toggle('menu-grain-off', !this.model.settings.grain);
+    this.gameViewModel.view.audio.setVolumes(this.model.settings.musicVolume, this.model.settings.effectsVolume);
+    this.gameViewModel.view.whipAudio.volume=.38*this.gameViewModel.view.audio.effectsVolume;
+  }
+
+  setVolume(kind, value) {
+    if(!['music','effects'].includes(kind))return;
+    this.model.settings[`${kind}Volume`]=Math.max(0,Math.min(1,Number(value)/100));
+    this.model.saveSettings();this.applySettings();
   }
 
   setSensitivity(value) {

@@ -1,6 +1,6 @@
 import { INITIAL_CARDS, MISSIONS, BOSS_REWARDS, CLEAR_REWARDS, cardUnlocked, refreshCardRewards } from '../config/campaign.js';
 import { ABILITIES } from '../config/abilityConfig.js';
-import { STARTER_DECK } from '../config/champions.js';
+import { CHAMPIONS } from '../config/champions.js';
 const STORAGE_KEY = 'faroeste-black-trail-order-profile-v1';
 const DEFAULT_PROFILE = { coins: 0, deck: INITIAL_CARDS, purchases: { damage: 0, health: 0, speed: 0 }, discoveries: [] };
 
@@ -17,7 +17,7 @@ export class MenuModel {
       missionClears: Array.isArray(saved.missionClears)?saved.missionClears:[],
       bossKills: Array.isArray(saved.bossKills)?saved.bossKills:[],
       unlockedCards: Array.isArray(saved.unlockedCards)?saved.unlockedCards.filter(id=>ABILITIES[id]):[],
-      unlockedHeroes: Array.isArray(saved.unlockedHeroes)?saved.unlockedHeroes.filter(id=>['joao','maria','labuta'].includes(id)):['joao'],
+      unlockedHeroes: Array.isArray(saved.unlockedHeroes)?saved.unlockedHeroes.filter(id=>CHAMPIONS[id]):['joao'],
     };
     refreshCardRewards(this.profile);
     this.profile.deck=this.profile.deck.filter(id=>this.cardUnlocked(id));
@@ -27,7 +27,7 @@ export class MenuModel {
     this.mode = 'campaign';
     this.champion = 'joao';
     this.map = 'desert';
-    this.settings = { effects: true, grain: true, mouseSensitivity: 1, touchSensitivity: 1 };
+    this.settings = { effects: true, grain: true, mouseSensitivity: 1, touchSensitivity: 1, musicVolume: .65, effectsVolume: .8 };
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(`${STORAGE_KEY}-settings`) || '{}')); } catch { /* Padrões. */ }
   }
 
@@ -64,8 +64,8 @@ export class MenuModel {
     return true;
   }
 
-  heroUnlocked(id){return id==='joao'||this.profile.unlockedHeroes.includes(id);}
-  stageUnlocked(id){return id==='desert'||id==='mine'&&Boolean(this.profile.storyClears.desert);}
+  heroUnlocked(id){return id==='joao'||id==='ana'&&Boolean(this.profile.storyClears.ghostTown)||this.profile.unlockedHeroes.includes(id);}
+  stageUnlocked(id){return id==='desert'||id==='mine'&&Boolean(this.profile.storyClears.desert)||id==='ghostTown'&&Boolean(this.profile.storyClears.mine);}
   cardUnlocked(id){return cardUnlocked(this.profile,id);}
   merchantUnlocked(){return this.profile.bossKills.length>0;}
   completeMission(id){
@@ -81,6 +81,10 @@ export class MenuModel {
   }
   clearStage(id){
     this.profile.storyClears[id]=true;
+    if(id==='ghostTown'){
+      this.profile.storyClears.town=true;
+      if(!this.profile.unlockedHeroes.includes('ana'))this.profile.unlockedHeroes.push('ana');
+    }
     this.profile.unlockedCards=[...new Set([...this.profile.unlockedCards,...(CLEAR_REWARDS[id]||[])])];refreshCardRewards(this.profile);this.save();
   }
   price(id) {

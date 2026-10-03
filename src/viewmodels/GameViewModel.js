@@ -1,6 +1,9 @@
 import { MISSIONS } from '../config/campaign.js';
-import { STAGES, MINE_BOSSES } from '../config/stages.js';
+import { STAGES, MINE_BOSSES, CITY_BOSSES } from '../config/stages.js';
+import { WeatherSystem } from '../systems/WeatherSystem.js';
+import { obstacleHit, segmentSphere } from '../systems/ProjectilePhysics.js';
 import { AbilitySystem } from '../systems/AbilitySystem.js';
+import { EnemySeparation } from '../systems/EnemySeparation.js';
 const LIMIT = 238;
 const RANGE = 5;
 const BOSSES = [
@@ -9,7 +12,7 @@ const BOSSES = [
   { at: 660, type: 'shadowMarshal', visual: 'marshal', hp: 950, damage: 34, speed: 2.35, xp: 650 },
 ];
 const BOSS_COINS = Object.fromEntries(
-  [BOSSES, MINE_BOSSES].flatMap(bosses => bosses.map((boss, index) => [boss.type, [100, 300, 700][index]]))
+  [BOSSES, MINE_BOSSES, CITY_BOSSES].flatMap(bosses => bosses.map((boss, index) => [boss.type, [100, 300, 700][index]]))
 );
 const STATS = {
   bat: { hp: 10, damage: 10, armor: 0, speed: 2.5, xp: 10 },
@@ -20,6 +23,8 @@ const STATS = {
   spider:{hp:18,damage:10,armor:0,speed:2.8,xp:14},
   miner:{hp:55,damage:18,armor:2,speed:1.55,xp:32},
   ghost:{hp:30,damage:16,armor:0,speed:2.2,xp:26},
+  ghoul:{hp:85,damage:22,armor:2,speed:1.9,xp:42},
+  axeSkeleton:{hp:48,damage:18,armor:1,speed:1.5,xp:30},
   zombie: { hp: 36, damage: 12, armor: 1, speed: 1.45, xp: 23 },
   bonewalker: { hp: 31, damage: 11, armor: 1, speed: 1.95, xp: 22 },
   wendigo: { hp: 115, damage: 23, armor: 3, speed: 2.3, xp: 90 },
@@ -32,8 +37,10 @@ export class GameViewModel {
     this.view = view;
     this.menuModel = menuModel;
     this.abilitySystem = new AbilitySystem(model, view, this);
+    this.weather = new WeatherSystem(this);
     this.keys = new Set();
     this.colliders = [];
+    this.crowd = new EnemySeparation((x,z,radius)=>this.spotClear(x,z,radius));
     this.spawnClock = 1.2;
     this.dogClock = 7;
     this.skeletonClock = 11;
@@ -88,11 +95,13 @@ export class GameViewModel {
 
   addCollider(x, z, radius) { this.colliders.push({ kind: 'circle', x, z, radius }); }
 
-  addBoxCollider(minX, maxX, minZ, maxZ) { this.colliders.push({ kind: 'box', minX, maxX, minZ, maxZ }); }
+  addBoxCollider(minX, maxX, minZ, maxZ, minY=0, maxY=4) { this.colliders.push({ kind: 'box', minX, maxX, minZ, maxZ,minY,maxY }); }
 
   spotClear(x, z, padding = 0) {
-    if(this.model.stage==='mine'){if((x/(38-padding))**2+(z/(76-padding))**2>1)return false;}
-    else if (Math.hypot(x, z) > LIMIT - padding) return false;
+    const bounds=STAGES[this.model.stage||'desert'].bounds;
+    if(bounds.ellipse){if((x/(bounds.ellipse[0]-padding))**2+(z/(bounds.ellipse[1]-padding))**2>1)return false;}
+    else if(bounds.x){if(Math.abs(x)>bounds.x-padding||Math.abs(z)>bounds.z-padding)return false;}
+    else if (Math.hypot(x, z) > bounds.radius - padding) return false;
     return this.colliders.every(item => item.kind === 'box'
       ? x < item.minX - padding || x > item.maxX + padding || z < item.minZ - padding || z > item.maxZ + padding
       : Math.hypot(x - item.x, z - item.z) >= item.radius + padding);
@@ -112,7 +121,8 @@ export class GameViewModel {
       this.starting=true;
       if(this.touchDevice)this.requestLandscape();
       await this.view.assetsReady;
-      this.view.selectStage(selection.map);
+      await this.view.selectStage(selection.map);
+      this.weather.reset();
       this.starting=false;
       this.model.deck = this.menuModel.profile.deck.filter(id=>this.menuModel.cardUnlocked(id));
       this.runMissions=(MISSIONS[selection.map]||[]).map(m=>({...m,count:0,completed:false,failed:false}));
@@ -215,6 +225,7 @@ export class GameViewModel {
         this.updateWorldEvents(delta);
         if (this.model.phase === 'playing') {
           this.spawnWave(delta);
+          this.weather.update(delta);
           this.moveEnemies(delta);
           this.moveProjectiles(delta);
           this.abilitySystem.update(delta);
@@ -255,8 +266,24 @@ export class GameViewModel {
     this.actuallyWalking = Math.hypot(camera.position.x-oldX, camera.position.z-oldZ) > .0001;
   }
 
+  displacePlayer(dx,dz) {
+    const p=this.view.camera.position;
+    if(this.spotClear(p.x+dx,p.z,.48))p.x+=dx;
+    if(this.spotClear(p.x,p.z+dz,.48))p.z+=dz;
+  }
+
   spawnWave(delta) {
     const elapsed = this.model.elapsed;
+    if(this.model.stage==='ghostTown'){
+      this.spawnClock-=delta;
+      if(this.spawnClock<=0){
+        this.spawnClock=Math.max(.5,1.8-elapsed/900);
+        const roster=elapsed<100?['bat','snake','ghost']:elapsed<260?['ghost','snake','bat','scorpion','zombie']:['ghost','snake','bat','scorpion','ghoul','zombie','axeSkeleton'];
+        for(let i=0;i<1+Math.floor(elapsed/240)&&this.model.enemies.length<48;i++)this.spawnEnemy(roster[Math.floor(Math.random()*roster.length)]);
+      }
+      for(const boss of CITY_BOSSES)if(elapsed>=boss.at&&!this.model.bossesSpawned.has(boss.type)&&this.spawnEnemy(boss.type,boss))this.model.bossesSpawned.add(boss.type);
+      return;
+    }
     if(this.model.stage==='mine'){
       this.spawnClock-=delta;
       if(this.spawnClock<=0){
@@ -307,9 +334,10 @@ export class GameViewModel {
   }
 
   spawnEnemy(type, boss = null) {
-    const visual = boss?.visual || type;
+    const visual = boss?.visual || (type==='axeSkeleton'?'skeleton':type);
     if (!this.view.enemyTemplates.has(visual)) return false;
-    const point = this.findEventSpot(boss ? 17 : 25, boss ? 22 : 33);
+    const point = this.findEventSpot(boss ? 17 : 25, boss ? 22 : 33,
+      boss?3.2:1.1,(x,z)=>this.model.enemies.every(enemy=>Math.hypot(x-enemy.x,z-enemy.z)>enemy.bodyRadius+(boss?3.2:1.1)));
     if (!point) return false;
     const { x, z } = point;
     const y = visual === 'bat' ? 2.2 + Math.random() * 1.2 : 0;
@@ -317,45 +345,53 @@ export class GameViewModel {
     if (!object) return false;
     const stats = boss || STATS[type];
     const minute = Math.floor(this.model.elapsed / 60);
-    this.model.enemies.push({
-      type, visual, object, x, y, z, boss: Boolean(boss),
+    const enemy={
+      type, visual, object, x, y, z, boss: Boolean(boss),height:this.view.enemyActors.get(object)?.height,bottom:this.view.enemyActors.get(object)?.bottom,
       hp: boss ? stats.hp : Math.round(stats.hp * (1 + minute * 0.18)),
       maxHp: boss ? stats.hp : Math.round(stats.hp * (1 + minute * 0.18)),
       damage: stats.damage, armor: boss ? 3 : stats.armor,
       speed: stats.speed, xp: stats.xp,
       phase: Math.random() * Math.PI * 2, shotClock: 2.6,
-    });
+    };
+    this.crowd.register(enemy,this.view.enemyActors.get(object)?.bodyRadius||.55);
+    this.model.enemies.push(enemy);
     return true;
   }
 
   moveEnemies(delta) {
     const player = this.view.camera.position;
     this.invulnerable = Math.max(0, this.invulnerable - delta);
-    for (const enemy of this.model.enemies) {
+    const enemies=[...this.model.enemies];
+    for (const enemy of enemies) {
       const oldX = enemy.x, oldZ = enemy.z;
+      enemy.previousX=oldX;enemy.previousZ=oldZ;
       const dx = player.x - enemy.x, dz = player.z - enemy.z;
       const distance = Math.max(0.001, Math.hypot(dx, dz));
-      if (distance > (enemy.boss ? 2.1 : 1.1)) {
+      if (distance > enemy.bodyRadius+.58) {
         const travel = Math.max(0, enemy.speed - (enemy.knockback || 0)) * delta;
-        enemy.x += dx / distance * travel;
-        enemy.z += dz / distance * travel;
+        const direction=this.crowd.steer(enemy,enemies,dx,dz);
+        this.crowd.move(enemy,direction.x*travel,direction.z*travel);
       }
       if (enemy.knockback > 0) {
-        enemy.x += (enemy.knockX || 0) * enemy.knockback * delta;
-        enemy.z += (enemy.knockZ || 0) * enemy.knockback * delta;
+        this.crowd.move(enemy,(enemy.knockX || 0)*enemy.knockback*delta,(enemy.knockZ || 0)*enemy.knockback*delta);
         enemy.knockback = Math.max(0, enemy.knockback - delta * 25);
       }
-      const clearance = enemy.boss ? 0.9 : 0.42;
+      const clearance = enemy.bodyRadius;
       if (!this.spotClear(enemy.x, enemy.z, clearance)) {
         if (this.spotClear(enemy.x, oldZ, clearance)) enemy.z = oldZ;
         else if (this.spotClear(oldX, enemy.z, clearance)) enemy.x = oldX;
         else { enemy.x = oldX; enemy.z = oldZ; }
       }
+    }
+    this.crowd.resolve(enemies,player);
+    for(const enemy of enemies){
+      const dx=player.x-enemy.x,dz=player.z-enemy.z,distance=Math.hypot(dx,dz);
       enemy.object.position.set(enemy.x, enemy.y + (enemy.visual === 'bat' ? Math.sin(this.model.elapsed * 5 + enemy.phase) * 0.28 : 0), enemy.z);
       // Os modelos originais têm a frente em +Z, como no Faroeste Survivors.
       enemy.object.rotation.y = Math.atan2(dx, dz);
       this.view.updateEnemy(enemy.object, delta);
-      if (distance < (enemy.boss ? 2.2 : 1.35) && this.invulnerable === 0) {
+      enemy.vx=(enemy.x-enemy.previousX)/Math.max(.001,delta);enemy.vz=(enemy.z-enemy.previousZ)/Math.max(.001,delta);
+      if (distance < enemy.bodyRadius+.8 && this.invulnerable === 0) {
         this.hurt(enemy.damage);
         this.view.attackEnemy(enemy.object);
       }
@@ -365,6 +401,10 @@ export class GameViewModel {
           enemy.shotClock = 3.6;
           this.bossVolley(enemy);
         }
+      }
+      if(enemy.type==='axeSkeleton'&&distance<23&&distance>3){
+        enemy.shotClock-=delta;
+        if(enemy.shotClock<=0){enemy.shotClock=3.2;this.throwAxe(enemy);this.view.attackEnemy(enemy.object);}
       }
     }
   }
@@ -380,26 +420,40 @@ export class GameViewModel {
     const aim = Math.atan2(this.view.camera.position.z - enemy.z, this.view.camera.position.x - enemy.x);
     for (let i = -2; i <= 2; i++) {
       const angle = aim + i * 0.23;
-      const object = this.view.addProjectile(enemy.x, 1.8, enemy.z);
+      const y=enemy.y+Math.min(3.5,(enemy.height||3)*.6),distance=Math.max(1,Math.hypot(this.view.camera.position.x-enemy.x,this.view.camera.position.z-enemy.z));
+      const object = this.view.addProjectile(enemy.x, y, enemy.z);
       this.model.projectiles.push({
-        object, x: enemy.x, y: 1.8, z: enemy.z,
+        object, x: enemy.x, y, z: enemy.z,vy:(this.view.camera.position.y-.3-y)/distance*7,
         vx: Math.cos(angle) * 7, vz: Math.sin(angle) * 7,
         age: 0, damage: Math.ceil(enemy.damage * 0.45),
       });
     }
   }
 
+  throwAxe(enemy) {
+    if(this.model.projectiles.length>=64)return;
+    const p=this.view.camera.position,flight=Math.max(.5,Math.hypot(p.x-enemy.x,p.z-enemy.z)/13),y=1.6;
+    const object=this.view.addProjectile(enemy.x,y,enemy.z,'axe');
+    this.model.projectiles.push({object,x:enemy.x,y,z:enemy.z,vx:(p.x-enemy.x)/flight,vz:(p.z-enemy.z)/flight,vy:(p.y-y)/flight+4*flight,gravity:8,age:0,damage:enemy.damage,kind:'axe'});
+  }
+
   moveProjectiles(delta) {
     const player = this.view.camera.position;
     for (const shot of [...this.model.projectiles]) {
+      const old={x:shot.x,y:shot.y,z:shot.z};
       shot.age += delta;
       shot.x += shot.vx * delta;
       shot.z += shot.vz * delta;
+      shot.y+=(shot.vy||0)*delta-.5*(shot.gravity||0)*delta*delta;shot.vy=(shot.vy||0)-(shot.gravity||0)*delta;
       shot.object.position.set(shot.x, shot.y, shot.z);
-      if (Math.hypot(player.x - shot.x, player.z - shot.z) < 0.75 && Math.abs(shot.y - player.y) < 1.5) {
+      if(shot.kind==='axe')shot.object.rotation.z+=delta*12;
+      const wall=obstacleHit(old,shot,this.colliders,.15);
+      const hit=segmentSphere(old,shot,{x:player.x,y:player.y-.4,z:player.z},.75);
+      if (hit!==null&&(wall===null||hit<wall)) {
         if (this.invulnerable === 0) this.hurt(shot.damage);
         shot.age = 10;
       }
+      if(wall!==null||shot.y<.08)shot.age=10;
       if (shot.age > 5) {
         this.view.removeProjectile(shot.object);
         this.model.projectiles.splice(this.model.projectiles.indexOf(shot), 1);
@@ -489,14 +543,14 @@ export class GameViewModel {
     this.model.loot.push({ object, x, z, kind, value });
   }
 
-  findEventSpot(minDistance, maxDistance) {
+  findEventSpot(minDistance, maxDistance, clearance=3,accept=()=>true) {
     const player = this.view.camera.position;
     for (let i = 0; i < 80; i++) {
       const angle = Math.random() * Math.PI * 2;
       const radius = minDistance + Math.random() * (maxDistance - minDistance);
       const x = player.x + Math.cos(angle) * radius;
       const z = player.z + Math.sin(angle) * radius;
-      if (this.spotClear(x, z, 3)) return { x, z };
+      if (this.spotClear(x, z, clearance)&&accept(x,z)) return { x, z };
     }
     return null;
   }

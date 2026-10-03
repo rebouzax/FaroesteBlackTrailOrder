@@ -28,6 +28,26 @@ Disparo Duplicado e Olho de Chumbo. O Arsenal abre na lista de cartas liberadas.
 | General Mineiro | Bomba Pirata |
 | 15 minutos, todos os três chefes derrotados | Tônico Azul, Mira do Horizonte, Fogo Profano, Tempestade de Prata |
 
+Concluir a Mina abre o capítulo III, Cidade Fantasma.
+
+## Cidade Fantasma
+
+| Evento | Recompensa |
+| --- | --- |
+| A partir de 1:15, derrotar 10 fantasmas em 140 s | Bala Fantasma |
+| A partir de 5:10, derrotar 8 esqueletos lançadores em 155 s | Lâmina Retornante |
+| A partir de 9:15, derrotar 10 ghouls em 165 s | Bomba de Dinamite |
+| Cerberus (3:00) | Bastião de Ferro |
+| Devorador de Almas (7:00) | Estilhaços de Ossos |
+| Carrasco Acorrentado (13:00) | Tempestade de Prata |
+| 15 minutos, todos os três chefes derrotados | Ana Tiro Certo, Pacto da Fronteira, Réquiem da Poeira e catálogo de cartas vinculado à cidade (`town`) |
+
+Ana usa duas pistolas com tiros alternados. A Pistola do Sertão melhora as duas armas
+em vez de criar uma arma auxiliar. Perfis que já concluíram a Cidade Fantasma
+têm acesso à Ana automaticamente, sem precisar repetir a fase.
+
+Cada fase mantém moedas base de 15 nos drops comuns e 100/300/700 nos três chefes, com bônus de fortuna na coleta.
+
 Chefes pausam o relógio da campanha e das submissões, mas não as animações.
 Submissões falhadas podem ser tentadas em outra partida. Conquistas já obtidas,
 cartas, campeões, moedas e registros do bestiário permanecem após derrota.
