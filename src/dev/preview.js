@@ -11,6 +11,20 @@ export async function preview(game) {
     return;
   }
   await Promise.all([view.assetsReady,view.weaponReady]);
+  if(kind==='saloon'){
+    await view.selectStage('saloon');model.startRun({map:'saloon',mode:'free'});model.phase='preview';view.hideMenu();
+    const angle=new URLSearchParams(location.search).get('angle');
+    if(angle==='upper'){view.camera.position.set(-19,6.08,12);view.camera.lookAt(10,2,-12);}
+    else if(angle==='witch'){
+      view.camera.position.set(0,2,9);view.camera.lookAt(0,1.7,4);
+      const actor=view.addEnemy('witch',0,.7,4,true,1.25);if(actor){actor.rotation.y=0;view.danceEnemy(actor);}
+    }else{view.camera.position.set(0,2.3,24);view.camera.lookAt(0,3,-18);}
+    view.renderer.setAnimationLoop(()=>{
+      model.visualTime+=1/60;
+      for(const actor of view.enemyActors.keys())view.updateEnemy(actor,1/60);
+      view.update(1/60,model);view.psx.render(1/60);
+    });return;
+  }
   if(kind==='city'){
     await view.selectStage('ghostTown');model.startRun({map:'ghostTown',mode:'free'});model.phase='preview';view.hideMenu();
     view.camera.position.set(0,1.68,170);view.camera.lookAt(0,1.68,-200);

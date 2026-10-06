@@ -1,5 +1,7 @@
 import { MineStage } from './MineStage.js';
 import { GhostTownStage } from './GhostTownStage.js';
+import { SaloonStage } from './SaloonStage.js';
+import { SaloonBossEffectsView } from './SaloonBossEffectsView.js';
 import { WeatherView } from './WeatherView.js';
 import { ENEMY_VISUAL_YAW } from '../config/enemyFacing.js';
 import { STAGES } from '../config/stages.js';
@@ -16,6 +18,8 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { applyPSXMaterial, setJitterScale, setAffineAmount, setAffineCap, setAffineFade } from '../vendor/threejs-psx-shader/src/PSXMaterial.js';
 import { PSXPipeline } from '../vendor/threejs-psx-shader/src/PSXPipeline.js';
 import { MenuView } from './MenuView.js';
+import { merchantShop } from './MerchantShopView.js';
+import { runProducts, licenseProducts } from '../viewmodels/BentoShopModel.js';
 
 const BASE_URL = import.meta.env.BASE_URL;
 const MODEL_ROOT = `${BASE_URL}models/`;
@@ -130,9 +134,11 @@ export class GameView {
           <button class="touch-pause" type="button" aria-label="Pausar">Ⅱ</button>
         </div>
         <section class="cards-overlay" hidden aria-label="Escolha uma carta"><div class="cards-panel"><span class="cards-kicker">UM NOVO NÍVEL</span><h2>ESCOLHA SUA CARTA</h2><p>A estrada fica mais perigosa a cada minuto.</p><div class="cards-list"></div></div></section>
-        <section class="run-merchant" hidden aria-label="Bento, o mercador"><div class="run-merchant-panel"><img src="${BASE_URL}art/menu/bento.webp" alt="Bento"><div><small>MERCADOR DA ESTRADA</small><h2>BENTO</h2><p class="run-wallet"></p><div class="run-products"></div><button type="button" class="leave-merchant">VOLTAR À ESTRADA</button></div></div></section>
+        <section class="run-merchant" hidden aria-label="Bento, o mercador"><div class="run-merchant-panel bento-run-panel"></div></section>
         <div class="pickup-toast" hidden role="status"></div>
-        <section class="end-overlay" hidden><div class="end-panel"><span class="end-kicker">BLACK TRAIL ORDER</span><h2 class="end-title"></h2><p class="end-copy"></p><button class="restart-button" type="button">NOVA JORNADA</button></div></section>
+        <aside class="merchant-indicator" hidden><span class="merchant-bearing" aria-hidden="true">↑</span><span><b>BENTO</b><small class="merchant-distance"></small></span><span class="merchant-bag" aria-hidden="true">◈</span></aside>
+        <div class="death-banner" hidden role="status"><strong>Você morreu</strong></div>
+        <section class="end-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="end-title"><div class="end-panel"><span class="end-kicker">BLACK TRAIL ORDER</span><h2 class="end-title" id="end-title"></h2><p class="end-copy"></p><button class="restart-button" type="button">VOLTAR</button></div></section>
         <div class="xp-track" role="progressbar" aria-label="Experiência para o próximo nível" aria-valuemin="0" aria-valuenow="0" aria-valuemax="100"><div class="xp-fill"></div><span class="xp-label">NÍVEL 1 · 0/100 XP</span></div>
         <div class="rotate-device" role="status"><span class="rotate-symbol" aria-hidden="true">▯</span><strong>GIRE O APARELHO</strong><p>Jogue na horizontal. Se preciso, desative o bloqueio de rotação.</p></div>
         <div class="vignette"></div>
@@ -145,10 +151,10 @@ export class GameView {
       cards: this.root.querySelector('.cards-overlay'),
       cardsList: this.root.querySelector('.cards-list'),
       runMerchant: this.root.querySelector('.run-merchant'),
-      runProducts: this.root.querySelector('.run-products'),
-      runWallet: this.root.querySelector('.run-wallet'),
       pickupToast: this.root.querySelector('.pickup-toast'),
       end: this.root.querySelector('.end-overlay'),
+      death: this.root.querySelector('.death-banner'),
+      merchantIndicator:this.root.querySelector('.merchant-indicator'),
       health: this.root.querySelector('.health-value'),
       coins: this.root.querySelector('.coins-value'),
       timer: this.root.querySelector('.timer-value'),
@@ -165,12 +171,17 @@ export class GameView {
       const button = event.target.closest('[data-card]');
       if (button) this.viewModel.chooseCard(button.dataset.card);
     });
-    this.buttons.runProducts.addEventListener('click', event => {
-      const button = event.target.closest('[data-run-buy]');
-      if (button) this.viewModel.buyFromMerchant(button.dataset.runBuy);
+    this.buttons.runMerchant.addEventListener('click', event => {
+      const button = event.target.closest('[data-run-shop]');
+      if(button){
+        const action=button.dataset.runShop;
+        this.viewModel.merchantAction(action);
+        const next=this.buttons.runMerchant.querySelector(`[data-run-shop="${action}"]:not(:disabled)`)||this.buttons.runMerchant.querySelector('.bento-item.is-selected');
+        next?.focus({preventScroll:true});
+      }
+      if(event.target.closest('.leave-merchant'))this.viewModel.leaveMerchant();
     });
-    this.root.querySelector('.leave-merchant').addEventListener('click', () => this.viewModel.leaveMerchant());
-    this.root.querySelector('.restart-button').addEventListener('click', () => window.location.reload());
+    this.root.querySelector('.restart-button').addEventListener('click', () => this.viewModel.returnToSelection());
     this.bindTouchControls();
     this.controls.addEventListener('lock', () => {
       this.buttons.menu.classList.add('is-hidden');
@@ -186,6 +197,27 @@ export class GameView {
   hideMenu() {
     this.buttons.menu.classList.add('is-hidden');
     this.root.classList.add('is-started');
+  }
+  showMenu(){
+    this.buttons.menu.classList.remove('is-hidden');
+    this.root.classList.remove('is-started','is-active','is-damaged','is-death');
+    this.audio.syncMusic('menu',false);
+    this.root.querySelector('[data-menu-action="confirmChampion"], [data-menu-action="play"]')?.focus({preventScroll:true});
+  }
+  clearRun(model){
+    for(const enemy of [...model.enemies])this.removeEnemy(enemy.object);
+    for(const item of model.loot)this.removeLoot(item.object);
+    for(const item of model.pickups)this.removeEventObject(item.object);
+    for(const shot of model.projectiles)this.removeProjectile(shot.object);
+    this.removeEventObject(model.merchant?.object);
+    for(const node of this.bossBarNodes.values())node.remove();this.bossBarNodes.clear();
+    this.buttons.end.hidden=true;this.buttons.death.hidden=true;this.buttons.merchantIndicator.hidden=true;
+    this.buttons.pickupToast.hidden=true;this.pickupMessageExpires=0;
+    this.hideCards();this.hideRunMerchant();this.hideResume();this.endShown=false;this.endStartedAt=0;
+    this.root.classList.remove('is-death');
+    this.whipLine.visible=false;this.crackTimer=0;this.crackEffect.visible=false;this.crackLight.intensity=0;
+    this.recoil=0;this.leftRecoil=0;this.pistolFlash=0;this.shotgunKick=0;this.walkBlend=0;this.weaponPhase=0;
+    this.whipAudio.pause();this.whipAudio.currentTime=0;
   }
 
   showResume() { this.buttons.resume.hidden = false; }
@@ -257,16 +289,11 @@ export class GameView {
   hideCards() { this.buttons.cards.hidden = true; }
 
   showRunMerchant(model) {
-    this.buttons.runWallet.textContent = `MOEDAS NA PARTIDA · ${model.coins}`;
-    const products = [
-      ['whip', 'Arma reforçada', '+5 de dano nesta partida'],
-      ['health', 'Bandagem de Bento', '+25 de vida agora'],
-      ['speed', 'Botas ligeiras', 'Mais velocidade nesta partida'],
-    ];
-    this.buttons.runProducts.innerHTML = products.map(([id, name, detail]) => {
-      const price = this.viewModel.merchantPrice(id);
-      return `<button type="button" data-run-buy="${id}" ${model.coins < price ? 'disabled' : ''}><b>${name}</b><span>${detail}</span><strong>◈ ${price}</strong></button>`;
-    }).join('');
+    const vm=this.viewModel,menu=vm.menuModel;
+    this.buttons.runMerchant.querySelector('.bento-run-panel').innerHTML=merchantShop({
+      products:vm.shopTab==='cards'?licenseProducts(menu,model):runProducts(menu,model),state:vm,wallet:Math.min(model.coins,menu.profile.coins),
+      caption:'ENCONTRO NA ESTRADA',progress:'A partida espera enquanto você negocia.',notice:vm.shopNotice,run:true,
+    })+`<nav class="bento-footer"><span>Saldo salvo: ◈ ${menu.profile.coins}</span><button type="button" class="leave-merchant">VOLTAR À ESTRADA ↗</button></nav>`;
     this.buttons.runMerchant.hidden = false;
   }
 
@@ -285,13 +312,22 @@ export class GameView {
   }
 
   showEnd(model) {
-    if (this.endShown) return;
-    this.endShown = true;
-    this.buttons.end.querySelector('.end-title').textContent = model.phase === 'victory' ? 'A LUA SE PÔS.' : 'A ESTRADA COBROU SEU PREÇO.';
-    this.buttons.end.querySelector('.end-copy').textContent = model.phase === 'victory'
-      ? `${model.hero.name} concluiu ${model.stageName}. ${model.kills} inimigos derrotados. Novas recompensas foram guardadas.`
-      : `${model.hero.name} resistiu ${Math.floor(model.elapsed / 60)} minutos e derrotou ${model.kills} inimigos. Conquistas obtidas foram guardadas.`;
+    if(!this.endShown){
+      this.endShown=true;this.endStartedAt=performance.now();
+      this.buttons.end.querySelector('.end-title').textContent=model.phase==='victory'?'A LUA SE PÔS.':'FIM DA JORNADA';
+      this.buttons.end.querySelector('.end-copy').textContent=model.phase==='victory'
+        ?`${model.hero.name} concluiu ${model.stageName}. ${model.kills} inimigos derrotados.`
+        :`${model.hero.name} resistiu ${Math.floor(model.elapsed/60)} minutos e derrotou ${model.kills} inimigos. Seu progresso foi guardado.`;
+      const button=this.buttons.end.querySelector('.restart-button');
+      button.textContent=model.phase==='victory'?'VOLTAR · ESCOLHER CAMPEÃO':'VOLTAR · ESCOLHER MAPA';
+      if(model.phase==='defeat'){this.buttons.death.hidden=false;this.root.classList.add('is-death');}
+    }
+    const delay=window.matchMedia('(prefers-reduced-motion: reduce)').matches?1400:2600;
+    if(model.phase==='defeat'&&performance.now()-this.endStartedAt<delay)return;
+    this.buttons.death.hidden=true;this.root.classList.remove('is-death');
+    const firstShown=this.buttons.end.hidden;
     this.buttons.end.hidden = false;
+    if(firstShown)this.buttons.end.querySelector('.restart-button').focus({preventScroll:true});
   }
 
   addLighting() {
@@ -671,7 +707,7 @@ export class GameView {
       progress.push(this.loadCorpse(x, z, rotation));
     for (const [type, filename] of [
       ['snake','snake.glb'],['scorpion','scorpion.glb'],['spider','spider.glb'],['ghost','ghost.glb'],['ghoul','ghoul.glb'],['miner','miner.glb'],
-      ['cerberus','city-cerberus.glb'],['devourer','city-devourer.glb'],['chainedDemon','city-chained-demon.glb'],
+      ['cerberus','city-cerberus.glb'],['devourer','city-devourer.glb'],['chainedDemon','city-chained-demon.glb'],['witch','saloon-malvina.glb'],
       ['bat', 'bat.glb'], ['dog', 'dog.glb'], ['skeleton', 'skeleton.glb'], ['marshal', 'marshal.glb'],
       ['zombie', 'lowpoly_zombie.glb'],
       ['bonewalker', 'low_poly_psx_skeleton.glb'], ['wendigo', 'stylized_low-poly_wendigo.glb'],
@@ -800,7 +836,7 @@ export class GameView {
           : convert(child.material);
       });
       const flight = type === 'bat';
-      const desired = {snake:.65,scorpion:.6,spider:.7,cerberus:1.55,devourer:1.7,chainedDemon:2}[type] || (type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3);
+      const desired = {snake:.65,scorpion:.6,spider:.7,cerberus:1.55,devourer:1.7,chainedDemon:2,witch:1.9}[type] || (type === 'wendigo' ? 3.25 : flight ? 2.15 : 2.3);
       const normalized = placeAsset(scene, { size:desired,dimension:flight?'width':'height',yaw:ENEMY_VISUAL_YAW[type]||0 });
       if(flight) normalized.position.y -= new THREE.Box3().setFromObject(normalized).getSize(new THREE.Vector3()).y/2;
       const wrapper = new THREE.Group();wrapper.add(normalized);
@@ -810,7 +846,13 @@ export class GameView {
     }
   }
 
-  addEnemy(type, x, y, z, boss = false) {
+  enemyRadius(type,boss=false,scaleOverride=null){
+    const template=this.enemyTemplates.get(type);if(!template)return .55;
+    const size=new THREE.Box3().setFromObject(template.scene).getSize(new THREE.Vector3()),scale=scaleOverride??(boss?2.7:1);
+    return THREE.MathUtils.clamp(Math.max(size.x,size.z)*scale*.42,boss?.85:.35,boss?3.2:Math.min(2,Math.max(1.1,scale*1.1)));
+  }
+
+  addEnemy(type, x, y, z, boss = false, scaleOverride = null, radiusOverride=null) {
     const template = this.enemyTemplates.get(type);
     if (!template) return null;
     const root = new THREE.Group();
@@ -818,22 +860,23 @@ export class GameView {
     const deformables = template.animations.length ? [] : this.prepareProceduralLimbs(body, type);
     root.add(body);
     root.position.set(x, y, z);
-    const scale = boss ? 2.7 : 1;
+    const scale = scaleOverride ?? (boss ? 2.7 : 1);
     root.scale.setScalar(scale);
     this.world.add(root);
     const mixer = new THREE.AnimationMixer(body);
     const preferred = type === 'bat' ? /fly/i : /run|walk/i;
     const clip = template.animations.find((item) => preferred.test(item.name)) || template.animations.find(item=>/idle|hover/i.test(item.name)) || template.animations.find(item=>!/death|die|pose|empty/i.test(item.name));
     const walk = clip ? mixer.clipAction(clip).play() : null;
-    const attackClip = template.animations.find(item => /attack|punch|bite|strike/i.test(item.name));
+    const attackClip = template.animations.find(item => /attack|punch|bite|strike|cast/i.test(item.name));
+    const danceClip = template.animations.find(item => /dance/i.test(item.name));
     const hurtClip = template.animations.find(item => /hurt|damage|hit|impact/i.test(item.name));
     mixer.update(0);root.updateMatrixWorld(true);
-    const flight=type==='bat'||type==='ghost',bounds=new THREE.Box3().setFromObject(root,true);
+    const flight=type==='bat'||type==='ghost'||type==='witch',bounds=new THREE.Box3().setFromObject(root,true);
     if(!flight)body.position.y-=(bounds.min.y-y)/scale;
     const height=bounds.max.y-bounds.min.y;
-    const bodyRadius=THREE.MathUtils.clamp(Math.max(bounds.max.x-bounds.min.x,bounds.max.z-bounds.min.z)*.42,boss ? .85 : .35,boss?3.2:1.1);
+    const bodyRadius=radiusOverride??THREE.MathUtils.clamp(Math.max(bounds.max.x-bounds.min.x,bounds.max.z-bounds.min.z)*.42,boss ? .85 : .35,boss?3.2:Math.min(2,Math.max(1.1,scale*1.1)));
     const actor={ mixer, body, walk, bodyRadius, attack: attackClip ? mixer.clipAction(attackClip) : null,
-      hurt: hurtClip ? mixer.clipAction(hurtClip) : null, flash: 0, hitTime: 0, attackTime: 0, scale,
+      hurt: hurtClip ? mixer.clipAction(hurtClip) : null, dance:danceClip ? mixer.clipAction(danceClip) : null, flash: 0, hitTime: 0, attackTime: 0, scale,
       baseY: body.position.y, phase: Math.random() * Math.PI * 2, deformables,flight,height,bottom:flight?bounds.min.y-y:0,groundClock:0,groundOffset:0 };
     this.enemyActors.set(root,actor);
     mixer.addEventListener('finished',event=>{
@@ -938,12 +981,18 @@ export class GameView {
     action.reset().setEffectiveWeight(1).setLoop(THREE.LoopOnce,1).fadeIn(.08).play();action.clampWhenFinished=false;
   }
 
+  danceEnemy(object) {
+    const actor=this.enemyActors.get(object);
+    if(actor?.dance)this.playEnemyPose(actor,actor.dance);
+  }
+
   removeEnemy(object) {
     if (!object) return;
     this.world.remove(object);
     this.enemyActors.get(object)?.mixer.stopAllAction();
     object.traverse(child => {
       if (child.userData.proceduralGeometry) child.geometry.dispose();
+      if(child.isSkinnedMesh)child.skeleton.dispose();
     });
     this.enemyActors.delete(object);
   }
@@ -962,22 +1011,37 @@ export class GameView {
     const object = new THREE.Group();
     object.position.set(x, 0, z);
     object.add(normalized);
+    if(kind==='merchant'){
+      if(!this.merchantMarkerMaterial){
+        const canvas=document.createElement('canvas');canvas.width=canvas.height=64;const ctx=canvas.getContext('2d');
+        ctx.fillStyle='#211624';ctx.beginPath();ctx.arc(32,32,28,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#f2c37c';ctx.lineWidth=3;ctx.stroke();
+        ctx.fillStyle='#f2c37c';ctx.font='bold 35px Georgia';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('◈',32,33);
+        this.merchantMarkerMaterial=new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),transparent:true,depthTest:false,depthWrite:false});
+      }
+      const marker=new THREE.Sprite(this.merchantMarkerMaterial);marker.position.y=2.9;marker.scale.set(1,1,1);marker.visible=false;marker.renderOrder=4;
+      object.add(marker);object.userData.marker=marker;
+    }
     this.world.add(object);
     return object;
   }
 
-  removeEventObject(object) { if (object) this.world.remove(object); }
+  removeEventObject(object) {
+    if(!object)return;this.world.remove(object);
+    object.traverse(child=>{if(child.isSkinnedMesh)child.skeleton.dispose();});
+  }
 
   updateEventObject(object, kind, age) {
     if (!object) return;
     if (kind === 'bandage') {
-      object.position.y = 0.15 + Math.sin(age * 2.4) * 0.13;
+      object.position.y = (object.userData.floor||0)+0.15 + Math.sin(age * 2.4) * 0.13;
       object.rotation.y += 0.012;
     } else if (kind === 'merchant') {
       animateBento(object, age);
       const player = this.camera.position;
       object.rotation.y = Math.atan2(player.x - object.position.x, player.z - object.position.z);
-      object.position.y = 0;
+      object.position.y = object.userData.floor||0;
+      const distance=Math.hypot(player.x-object.position.x,player.z-object.position.z),marker=object.userData.marker;
+      if(marker){marker.visible=distance<=55;marker.position.y=2.9+Math.sin(age*3)*.16;marker.scale.setScalar(.9+Math.sin(age*3)*.05);}
     }
   }
 
@@ -993,14 +1057,19 @@ export class GameView {
     return object;
   }
 
-  removeLoot(object) { this.world.remove(object); }
+  removeLoot(object) { this.world.remove(object);object.geometry.dispose();object.material.dispose(); }
 
   addProjectile(x, y, z, kind='magic') {
     const object = new THREE.Group();
     if(kind==='axe'){
       const handle=new THREE.Mesh(new THREE.CylinderGeometry(.045,.045,.8,5),this.mat('#66452c'));
       const blade=new THREE.Mesh(new THREE.BoxGeometry(.4,.25,.08),this.mat('#b1b4b7'));blade.position.set(.16,.28,0);object.add(handle,blade);
-    }else object.add(new THREE.Mesh(new THREE.OctahedronGeometry(.28,0),new THREE.MeshBasicMaterial({color:'#ef9e65'})));
+    }else {
+      object.add(new THREE.Mesh(new THREE.OctahedronGeometry(kind==='fireball'?.38:.28,0),new THREE.MeshBasicMaterial({color:kind==='fireball'?'#ff7139':'#ef9e65'})));
+      if(kind==='fireball'){
+        const halo=new THREE.Mesh(new THREE.OctahedronGeometry(.58,0),new THREE.MeshBasicMaterial({color:'#ffb23e',transparent:true,opacity:.3,depthWrite:false}));object.add(halo);
+      }
+    }
     object.position.set(x, y, z);
     this.world.add(object);
     return object;
@@ -1040,18 +1109,28 @@ export class GameView {
     this.currentStage=STAGES[id]?id:'desert';
     const mine=this.currentStage==='mine';
     const city=this.currentStage==='ghostTown';
+    const saloon=this.currentStage==='saloon';
     if(mine&&!this.mineStage){this.mineStage=new MineStage(this);this.world.add(this.mineStage.group);}
     if(city&&!this.cityStage){this.cityStage=new GhostTownStage(this);this.world.add(this.cityStage.group);}
-    await (mine?this.mineStage.ready:city?this.cityStage.ready:Promise.resolve());
-    for(const child of this.world.children)child.visible=child===this.abilityEffects.group|| (child===this.mineStage?.group?mine:child===this.cityStage?.group?city:!mine&&!city);
-    for(const child of this.scene.children)if(child!==this.world&&child!==this.camera&&child!==this.weatherView.group)child.visible=!mine;
-    this.viewModel.colliders=mine?[...this.mineStage.colliders]:city?[...this.cityStage.colliders]:[...this.colliderSpecs];
-    this.scene.background.set(mine?'#141211':'#111d38');
-    this.scene.fog.color.set(mine?'#211c19':'#172640');this.scene.fog.density=mine?.009:.0028;
-    Object.assign(this.psx.getEffect('fog').settings,{color:mine?'#211c19':'#172640',density:mine?.009:.0025});
+    if(saloon&&!this.saloonStage){this.saloonStage=new SaloonStage(this);this.world.add(this.saloonStage.group);}
+    if(!this.saloonBossEffects)this.saloonBossEffects=new SaloonBossEffectsView(this.world);
+    await (mine?this.mineStage.ready:city?this.cityStage.ready:saloon?this.saloonStage.ready:Promise.resolve());
+    for(const child of this.world.children)child.visible=child===this.abilityEffects.group||child===this.saloonBossEffects.group&&saloon|| (child===this.mineStage?.group?mine:child===this.cityStage?.group?city:child===this.saloonStage?.group?saloon:!mine&&!city&&!saloon);
+    for(const child of this.scene.children)if(child!==this.world&&child!==this.camera&&child!==this.weatherView.group)child.visible=!mine&&!saloon;
+    this.viewModel.colliders=mine?[...this.mineStage.colliders]:city?[...this.cityStage.colliders]:saloon?[...this.saloonStage.colliders]:[...this.colliderSpecs];
+    this.scene.background.set(mine?'#141211':saloon?'#151019':'#111d38');
+    this.scene.fog.color.set(mine?'#211c19':saloon?'#211921':'#172640');this.scene.fog.density=mine?.009:saloon?.012:.0028;
+    Object.assign(this.psx.getEffect('fog').settings,{color:this.scene.fog.color,density:this.scene.fog.density});
     const spawn=STAGES[this.currentStage].spawn;this.camera.position.set(spawn.x,1.68,spawn.z);this.camera.rotation.set(0,0,0);
+    this.camera.far=city?780:400;this.camera.updateProjectionMatrix();
     this.root.querySelector('.stage-timer small').textContent=STAGES[this.currentStage].name.toUpperCase();
     this.buttons.resume.textContent='VOLTAR À PARTIDA';
+  }
+
+  floorAt(x,z,previous=0) {return this.currentStage==='saloon'?this.saloonStage.floorAt(x,z,previous):0;}
+
+  projectileFloor(x,z,height){
+    return this.currentStage==='saloon'?this.saloonStage.floorAt(x,z,height>=this.saloonStage.upperY?this.saloonStage.upperY:0):0;
   }
 
   setChampion(champion) {
@@ -1232,7 +1311,7 @@ export class GameView {
     if (!bosses.length) return;
     this.camera.updateMatrixWorld();
     const width = this.root.clientWidth, height = this.root.clientHeight;
-    const labels = {cityCerberus:'CERBERUS',cityDevourer:'DEVORADOR DE ALMAS',cityChainedDemon:'CARRASCO ACORRENTADO', mineGhoul:'GHOUL',mineWendigo:'WENDIGO',minerGeneral:'GENERAL MINEIRO', giantBat: 'MORCEGO GIGANTE', fireChupacabra: 'CHUPACABRA DE FOGO', shadowMarshal: 'MARECHAL DAS SOMBRAS' };
+    const labels = {saloonSpider:'VIÚVA DO SALÃO',saloonSkeleton:'BARMAN DAS CINZAS',damaMalvina:'DAMA MALVINA',cityCerberus:'CERBERUS',cityDevourer:'DEVORADOR DE ALMAS',cityChainedDemon:'CARRASCO ACORRENTADO', mineGhoul:'GHOUL',mineWendigo:'WENDIGO',minerGeneral:'GENERAL MINEIRO', giantBat: 'MORCEGO GIGANTE', fireChupacabra: 'CHUPACABRA DE FOGO', shadowMarshal: 'MARECHAL DAS SOMBRAS' };
     for (const enemy of bosses) {
       let node = this.bossBarNodes.get(enemy);
       if (!node) {
@@ -1254,15 +1333,27 @@ export class GameView {
       node.querySelector('i').style.width = `${Math.max(0, enemy.hp / enemy.maxHp * 100)}%`;
     }
   }
+  updateMerchantIndicator(model){
+    const merchant=model.merchant,node=this.buttons.merchantIndicator;
+    const dx=merchant?merchant.x-this.camera.position.x:0,dz=merchant?merchant.z-this.camera.position.z:0,distance=Math.hypot(dx,dz);
+    node.hidden=model.phase!=='playing'||!merchant||distance>65;
+    if(node.hidden)return;
+    const f=this.getPlanarFacing(),angle=Math.atan2(dx*f.rightX+dz*f.rightZ,dx*f.forwardX+dz*f.forwardZ);
+    node.querySelector('.merchant-bearing').style.transform=`rotate(${angle*180/Math.PI}deg)`;
+    node.querySelector('.merchant-distance').textContent=`${Math.round(distance)} m${Math.abs((merchant.floor||0)-(this.camera.position.y-1.68))>1.5?' · outro piso':''}`;
+    node.setAttribute('aria-label',`Bento a ${Math.round(distance)} metros. ${Math.abs(angle)<.6?'À frente':Math.abs(angle)>2.5?'Atrás':angle>0?'À direita':'À esquerda'}.`);
+  }
 
   update(delta, model) {
     this.audio.syncMusic(model.phase === 'menu' ? 'menu' : (model.stage||'desert'), document.hidden || (model.phase === 'playing' && !model.isLocked) || ['defeat','victory'].includes(model.phase));
     this.mineStage?.update(model.visualTime);
     this.cityStage?.update(model.visualTime);
+    this.saloonStage?.update(model.visualTime);
+    this.saloonBossEffects?.update(this.viewModel.saloonBosses,model);
     this.weatherView.update(this.viewModel.weather.state,this.camera.position,model.visualTime,model.stage);
-    const sand=this.viewModel.weather.state.kind==='sand',mine=model.stage==='mine';
-    this.scene.fog.color.set(sand?'#73614b':mine?'#211c19':'#172640');this.scene.fog.density=sand ? .028 : mine ? .009 : .0028;
-    Object.assign(this.psx.getEffect('fog').settings,{color:sand?'#73614b':mine?'#211c19':'#172640',density:this.scene.fog.density});
+    const sand=['desert','ghostTown'].includes(model.stage)&&this.viewModel.weather.state.kind==='sand',mine=model.stage==='mine',saloon=model.stage==='saloon';
+    this.scene.fog.color.set(sand?'#73614b':mine?'#211c19':saloon?'#211921':'#172640');this.scene.fog.density=sand ? .028 : mine ? .009 : saloon ? .012 : .0028;
+    Object.assign(this.psx.getEffect('fog').settings,{color:this.scene.fog.color,density:this.scene.fog.density});
     this.audio.footsteps(delta, model.walking, model.attributes().speed);
     this.abilityEffects.update(this.viewModel.abilitySystem, model, this.camera.position);
     this.crackTimer = Math.max(0, this.crackTimer - delta);
@@ -1314,6 +1405,7 @@ export class GameView {
       this.buttons.timerStatus.textContent = bossActive ? 'TEMPO PARADO · CHEFE' : model.mode === 'campaign' ? 'ATÉ O AMANHECER' : 'TEMPO DE SOBREVIVÊNCIA';
       this.buttons.timer.parentElement.classList.toggle('is-boss-time', bossActive);
       this.syncBossBars(model);
+      this.updateMerchantIndicator(model);
       const xpCost = model.nextLevelCost();
       const xpProgress = Math.min(100, model.xp / xpCost * 100);
       this.buttons.xpFill.style.width = `${xpProgress}%`;

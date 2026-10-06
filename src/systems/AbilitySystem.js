@@ -5,14 +5,18 @@ import { enemyShape, enemyHit, obstacleHit } from './ProjectilePhysics.js';
 export class AbilitySystem {
   constructor(model, view, game) {
     this.model=model; this.view=view; this.game=game;
+    this.reset();
+  }
+  reset(){
     this.shots=[]; this.bottles=[]; this.fires=[]; this.pulses=[]; this.pending=[]; this.impacts=[];
-    this.clocks={}; this.primaryClock=0;
+    this.clocks={}; this.primaryClock=0;this.pendingMirror=false;
   }
   closest(range, inFront=false) {
     const p=this.view.camera.position, f=this.view.getPlanarFacing(); let target=null;
     for (const enemy of this.model.enemies) {
       const dx=enemy.x-p.x,dz=enemy.z-p.z,d=Math.hypot(dx,dz);
       if (enemy.hp<=0||d>=range||(inFront&&(dx*f.forwardX+dz*f.forwardZ)/Math.max(.001,d)<.55)) continue;
+      if(this.model.stage==='saloon'&&obstacleHit(p,enemyShape(enemy).center,this.game.colliders,.02)!==null)continue;
       target=enemy;range=d;
     }
     return target;
@@ -25,15 +29,34 @@ export class AbilitySystem {
   extraShots(){return abilityStats('doubleShot',this.model.abilities.doubleShot||0).count;}
   burstDelay(attack){return attack.mode==='dual' ? .24 : attack.mode==='shotgun' ? .19 : .13;}
   queueAttack(attack) {
+    const extra=this.extraShots();
+    if(attack.mode==='bomb'&&extra){
+      // Front/back first, then sides and diagonals; max rank makes a full ring.
+      const count=extra+1,angles=count===7?Array.from({length:count},(_,i)=>i*Math.PI*2/count):[0,Math.PI,-Math.PI/2,Math.PI/2,-Math.PI/4,3*Math.PI/4].slice(0,count);
+      const p=this.view.camera.position,f=this.view.getPlanarFacing(),heading=Math.atan2(f.forwardZ,f.forwardX),distance=Math.hypot((attack.target?.x??p.x)-p.x,(attack.target?.z??p.z)-p.z);
+      const spread=Math.min(attack.stats.range*.7,Math.max(5,distance));
+      for(let i=0;i<count;i++){
+        const fan={...attack,fanAngle:angles[i],fanHeading:heading,fanDistance:spread};
+        if(!i)this.emitAttack(fan);else if(this.pending.length<256)this.pending.push({...fan,delay:.12*i});
+      }
+      return;
+    }
     this.emitAttack(attack);
-    const extra=this.extraShots(),delay=this.burstDelay(attack);
+    const delay=this.burstDelay(attack);
     for(let i=1;i<=extra&&this.pending.length<256;i++)this.pending.push({...attack,delay:delay*i});
   }
   emitAttack(attack) {
     const {stats,kind,mode}=attack;
     // Follow the current camera for weapons; cards may target in any direction.
     const target=attack.primary||attack.frontOnly?this.closest(stats.range,true):attack.target?.hp>0?attack.target:this.closest(stats.range||22);
-    if(mode==='bomb'){if(target)this.throwBomb(target,stats,kind,attack.bonus);return;}
+    if(mode==='bomb'){
+      if(attack.fanAngle!==undefined){
+        const p=this.view.camera.position,angle=attack.fanHeading+attack.fanAngle;
+        const x=p.x+Math.cos(angle)*attack.fanDistance,z=p.z+Math.sin(angle)*attack.fanDistance;
+        this.throwBomb({x,z,floor:this.view.floorAt(x,z,p.y-1.68)},stats,kind,attack.bonus);
+      }else if(target)this.throwBomb(target,stats,kind,attack.bonus);
+      return;
+    }
     if(mode==='radial'){
       const count=Math.min(18,stats.count);
       for(let i=0;i<count;i++)this.fire(null,stats,kind,i*Math.PI*2/count);
@@ -73,7 +96,7 @@ export class AbilitySystem {
     const a=angle??(target?Math.atan2(target.z-p.z,target.x-p.x):Math.atan2(f.forwardZ,f.forwardX));
     const distance=target?Math.max(1,Math.hypot(target.x-p.x,target.z-p.z)):15;
     const blade=['returningBlade','lunarReturn'].includes(kind);
-    const speed=blade?17:kind==='ghostShot'?20:kind==='rifle'?115:kind==='shotgun'?65:80;
+    const speed=blade?17:kind==='ghostShot'?20:kind==='bentoRailShot'?95:kind==='rifle'?115:kind==='shotgun'?65:80;
     const startY=p.y-.18,aimY=target?enemyShape(target).center.y:startY;
     const pitch=Math.atan2(aimY-startY,distance)+(kind==='shotgun'?(Math.random()-.5)*.025:0);
     // Two barrels have distinct origins; their convergence is calculated at the target.
@@ -81,37 +104,52 @@ export class AbilitySystem {
     const x=p.x+f.rightX*offset,z=p.z+f.rightZ*offset;
     const aim=angle===null&&target?Math.atan2(target.z-z,target.x-x):a;
     this.shots.push({x,y:startY,z,vx:Math.cos(aim)*Math.cos(pitch)*speed,vz:Math.sin(aim)*Math.cos(pitch)*speed,
-      vy:Math.sin(pitch)*speed,damage:stats.damage*(Math.random()<this.model.attributes().crit?1.7:1),pierce:stats.pierce||1,
+      vy:Math.sin(pitch)*speed,damage:stats.damage*(Math.random()<this.model.attributes().crit?1.7:1),pierce:(stats.pierce||1)+this.model.attributes().pierce,
       hit:new Set(),age:0,kind,range:stats.range||22,speed,distance:0,target:kind==='ghostShot'?target:null,blade});
   }
 
   throwBomb(target,skill,kind,bonus={damage:0,radius:0}) {
-    if(this.bottles.length>=16)return;
+    if(this.bottles.length>=32)return;
     const p=this.view.camera.position,flight=Math.max(.65,Math.min(1.35,Math.hypot(target.x-p.x,target.z-p.z)/18));
     const x=target.x+(target.vx||0)*flight*.6,z=target.z+(target.vz||0)*flight*.6,y=p.y-.25;
-    this.bottles.push({x:p.x,y,z:p.z,vx:(x-p.x)/flight,vz:(z-p.z)/flight,vy:(.18-y)/flight+9.81*flight/2,
-      gravity:9.81,age:0,kind,damage:(skill.damage+bonus.damage)*(Math.random()<this.model.attributes().crit?1.7:1),radius:(skill.radius||3.5)+bonus.radius,duration:skill.duration||0});
+    const floor=this.view.floorAt(x,z,target.floor||0);
+    this.bottles.push({x:p.x,y,z:p.z,vx:(x-p.x)/flight,vz:(z-p.z)/flight,vy:(floor+.18-y)/flight+9.81*flight/2,floor,
+      gravity:9.81,age:0,kind,damage:(skill.damage+bonus.damage)*(Math.random()<this.model.attributes().crit?1.7:1),radius:(skill.radius||3.5)+bonus.radius,duration:skill.duration||0,fireDamage:skill.fireDamage});
   }
   detonate(bottle) {
-    const effect={...bottle,y:.08,age:0};
-    if(bottle.duration){if(this.fires.length<12)this.fires.push(effect);this.view.audio.play('glass',.4);}
-    else {
-      this.pulses.push(effect);
+    const effect={...bottle,y:bottle.duration?this.view.projectileFloor(bottle.x,bottle.z,bottle.y)+.08:bottle.y,age:0};
+    if(bottle.duration){if(this.fires.length<32)this.fires.push({...effect,damage:bottle.fireDamage??bottle.damage});this.view.audio.play('glass',.4);}
+    if(!bottle.duration||bottle.kind==='bentoFuse') {
+      if(this.pulses.length<10)this.pulses.push(effect);
       for(const enemy of [...this.model.enemies]) {
-        const distance=Math.hypot(enemy.x-bottle.x,enemy.z-bottle.z);
-        if(distance>bottle.radius||enemy.y>bottle.radius)continue;
+        const distance=Math.hypot(enemy.x-bottle.x,enemy.y-bottle.y,enemy.z-bottle.z);
+        if(distance>bottle.radius)continue;
         // Walls protect targets from the blast; damage tapers at its edge.
-        if(obstacleHit({x:bottle.x,y:.5,z:bottle.z},{...enemyShape(enemy).center},this.game.colliders)!==null)continue;
+        if(obstacleHit({x:bottle.x,y:bottle.y+.3,z:bottle.z},{...enemyShape(enemy).center},this.game.colliders)!==null)continue;
         this.damage(enemy,bottle.damage*(1-.55*distance/bottle.radius),7);
       }
       this.view.audio.shotgun();
     }
+  }
+  pulse(kind,skill,push){
+    const p=this.view.camera.position;
+    if(this.pulses.length<10)this.pulses.push({kind,x:p.x,y:p.y-1.68,z:p.z,radius:skill.radius,age:0});
+    for(const enemy of [...this.model.enemies]){
+      if(!this.game.withinPlayerHeight(enemy)||Math.hypot(enemy.x-p.x,enemy.z-p.z)>skill.radius)continue;
+      if(obstacleHit(p,enemyShape(enemy).center,this.game.colliders,.02)!==null)continue;
+      this.damage(enemy,skill.damage,push);
+    }
+    this.view.audio.play('glass',.18);
   }
   update(dt) {
     const m=this.model,a=m.abilities,stats=m.attributes(),p=this.view.camera.position;
     for(const key of Object.keys(this.clocks)) this.clocks[key]-=dt;
     this.primaryClock-=dt;
     const ready=(id,interval)=>{if((this.clocks[id]||0)>0)return false;this.clocks[id]=interval;return true;};
+    if(this.pendingMirror){
+      this.pendingMirror=false;
+      if(m.health>0&&a.bentoMoonMirror&&ready('bentoMoonMirror',7))this.pulse('bentoMoonMirror',{damage:18+6*(a.bentoMoonMirror-1),radius:4},5);
+    }
     for(const pending of [...this.pending]){
       pending.delay-=dt;if(pending.delay>0)continue;
       this.pending.splice(this.pending.indexOf(pending),1);this.emitAttack(pending);
@@ -127,7 +165,7 @@ export class AbilitySystem {
         this.primaryClock=Math.max(this.burstDelay(attack)*this.extraShots()+(dual ? .23 : .1),m.hero.cooldown/(stats.attack*(pistol?1+.08*a.pistol:1)));
       }
     }
-    for(const id of ['pistol','ghostShot','returningBlade','lunarReturn']){
+    for(const id of ['pistol','ghostShot','returningBlade','lunarReturn','bentoRailShot']){
       if(!a[id]||(id==='returningBlade'&&a.lunarReturn)||(id==='pistol'&&pistolStyle==='dualUpgrade'))continue;
       const skill=this.skillStats(id),frontOnly=id==='pistol'&&pistolStyle==='primary',target=this.closest(skill.range,frontOnly);
       if(target&&ready(id,skill.cooldown/stats.attack)){
@@ -135,7 +173,7 @@ export class AbilitySystem {
           stats:{...skill,pierce:['returningBlade','lunarReturn'].includes(id)?999:skill.pierce}});
       }
     }
-    for(const id of ['molotov','pirateBomb']){
+    for(const id of ['molotov','pirateBomb','bentoFuse']){
       if(!a[id]&&!(id==='molotov'&&a.inferno))continue;
       const skill=this.skillStats(id,Math.max(1,a[id])),target=this.closest(skill.range);
       if(!target||!ready(id,skill.cooldown/stats.attack))continue;
@@ -146,26 +184,40 @@ export class AbilitySystem {
       const old={x:bottle.x,y:bottle.y,z:bottle.z};bottle.age+=dt;
       bottle.x+=bottle.vx*dt;bottle.z+=bottle.vz*dt;bottle.y+=bottle.vy*dt-.5*bottle.gravity*dt*dt;bottle.vy-=bottle.gravity*dt;
       const wall=obstacleHit(old,bottle,this.game.colliders,.12);
-      if(wall!==null){bottle.x=old.x+(bottle.x-old.x)*Math.max(0,wall-.01);bottle.z=old.z+(bottle.z-old.z)*Math.max(0,wall-.01);}
-      if(bottle.y>.18&&wall===null&&bottle.age<3)continue;
+      if(wall!==null){const t=Math.max(0,wall-.01);bottle.x=old.x+(bottle.x-old.x)*t;bottle.z=old.z+(bottle.z-old.z)*t;bottle.y=old.y+(bottle.y-old.y)*t;}
+      const floor=this.view.projectileFloor(bottle.x,bottle.z,bottle.y);
+      if(bottle.y>floor+.18&&wall===null&&bottle.age<3)continue;
       this.detonate(bottle);this.bottles.splice(this.bottles.indexOf(bottle),1);
     }
-    for(const fire of this.fires){fire.age+=dt;for(const enemy of [...m.enemies])if(Math.hypot(enemy.x-fire.x,enemy.z-fire.z)<=fire.radius)this.damage(enemy,fire.damage*dt);}
+    for(const fire of this.fires){fire.age+=dt;for(const enemy of [...m.enemies])if(Math.abs(enemy.y-fire.y)<2.6&&Math.hypot(enemy.x-fire.x,enemy.z-fire.z)<=fire.radius&&obstacleHit({x:fire.x,y:fire.y+.3,z:fire.z},enemyShape(enemy).center,this.game.colliders)===null)this.damage(enemy,fire.damage*dt);}
     this.fires=this.fires.filter(fire=>fire.age<fire.duration);
     if(a.requiem){const skill=this.skillStats('requiem');if(ready('requiem',skill.cooldown/stats.attack)){
-      this.pulses.push({x:p.x,z:p.z,radius:skill.radius,age:0});for(const enemy of [...m.enemies])if(Math.hypot(enemy.x-p.x,enemy.z-p.z)<=skill.radius)this.damage(enemy,skill.damage,8);
+      this.pulses.push({x:p.x,y:p.y-1.68,z:p.z,radius:skill.radius,age:0});for(const enemy of [...m.enemies])if(this.game.withinPlayerHeight(enemy)&&Math.hypot(enemy.x-p.x,enemy.z-p.z)<=skill.radius)this.damage(enemy,skill.damage,8);
     }}
+    if(a.bentoAshBell){const skill=this.skillStats('bentoAshBell');if(ready('bentoAshBell',skill.cooldown/stats.attack))this.pulse('bentoAshBell',skill,7);}
+    if(a.bentoGraveLantern){
+      const skill=this.skillStats('bentoGraveLantern');
+      for(const enemy of [...m.enemies]){
+        if(!this.game.withinPlayerHeight(enemy)||m.visualTime<(enemy.lanternHitAt||0))continue;
+        for(let i=0;i<skill.count;i++){
+          const angle=m.visualTime*1.8+i*Math.PI*2/skill.count,x=p.x+Math.cos(angle)*skill.radius,z=p.z+Math.sin(angle)*skill.radius;
+          if(Math.hypot(enemy.x-x,enemy.z-z)>(enemy.radius||.4)+.55)continue;
+          if(obstacleHit(p,{x,y:p.y-.3,z},this.game.colliders,.02)!==null)continue;
+          enemy.lanternHitAt=m.visualTime+.55;this.damage(enemy,skill.damage);break;
+        }
+      }
+    }
     for(const id of ['silverRain','boneStorm']){
       if(!a[id]&&!(id==='silverRain'&&a.silverStorm))continue;
       const skill=this.skillStats(id,Math.max(1,a[id])),bonus=id==='silverRain'&&a.silverStorm?abilityStats('silverStorm',a.silverStorm):{count:0,damage:0};
       if(ready(id,skill.cooldown/stats.attack))this.queueAttack({mode:'radial',kind:id,stats:{...skill,count:skill.count+bonus.count,damage:skill.damage+bonus.damage}});
     }
     if(a.horseshoe){const skill=this.skillStats('horseshoe');for(const enemy of [...m.enemies]){
-      if(m.visualTime<(enemy.orbitHitAt||0))continue;
+      if(!this.game.withinPlayerHeight(enemy)||m.visualTime<(enemy.orbitHitAt||0))continue;
       for(let i=0;i<skill.count;i++){const angle=m.visualTime*2.7+i*Math.PI*2/skill.count;
         if(Math.hypot(enemy.x-p.x-Math.cos(angle)*skill.radius,enemy.z-p.z-Math.sin(angle)*skill.radius)<.8){enemy.orbitHitAt=m.visualTime+.45;this.damage(enemy,skill.damage);break;}}
     }}
-    if(a.lantern||a.inferno){const skill=this.skillStats('lantern',Math.max(1,a.lantern));for(const enemy of [...m.enemies])if(Math.hypot(enemy.x-p.x,enemy.z-p.z)<=skill.radius)this.damage(enemy,(skill.damage+4*a.inferno)*dt);}
+    if(a.lantern||a.inferno){const skill=this.skillStats('lantern',Math.max(1,a.lantern));for(const enemy of [...m.enemies])if(this.game.withinPlayerHeight(enemy)&&Math.hypot(enemy.x-p.x,enemy.z-p.z)<=skill.radius)this.damage(enemy,(skill.damage+4*a.inferno)*dt);}
     for(const shot of this.shots){
       const old={x:shot.x,y:shot.y,z:shot.z};shot.age+=dt;
       if(shot.blade&&shot.distance>=shot.range){

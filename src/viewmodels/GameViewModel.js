@@ -1,18 +1,16 @@
 import { MISSIONS } from '../config/campaign.js';
-import { STAGES, MINE_BOSSES, CITY_BOSSES } from '../config/stages.js';
+import { RUN_UPGRADES } from '../config/bentoShop.js';
+import { runProducts, licenseProducts } from './BentoShopModel.js';
+import { STAGES, DESERT_BOSSES as BOSSES, MINE_BOSSES, CITY_BOSSES, SALOON_BOSSES } from '../config/stages.js';
+import { SaloonBossSystem } from '../systems/SaloonBossSystem.js';
 import { WeatherSystem } from '../systems/WeatherSystem.js';
 import { obstacleHit, segmentSphere } from '../systems/ProjectilePhysics.js';
 import { AbilitySystem } from '../systems/AbilitySystem.js';
 import { EnemySeparation } from '../systems/EnemySeparation.js';
 const LIMIT = 238;
 const RANGE = 5;
-const BOSSES = [
-  { at: 180, type: 'giantBat', visual: 'bat', hp: 450, damage: 21, speed: 1.55, xp: 380 },
-  { at: 360, type: 'fireChupacabra', visual: 'dog', hp: 700, damage: 27, speed: 1.65, xp: 480 },
-  { at: 660, type: 'shadowMarshal', visual: 'marshal', hp: 950, damage: 34, speed: 2.35, xp: 650 },
-];
 const BOSS_COINS = Object.fromEntries(
-  [BOSSES, MINE_BOSSES, CITY_BOSSES].flatMap(bosses => bosses.map((boss, index) => [boss.type, [100, 300, 700][index]]))
+  [BOSSES, MINE_BOSSES, CITY_BOSSES, SALOON_BOSSES].flatMap(bosses => bosses.map((boss, index) => [boss.type, [100, 300, 700][index]]))
 );
 const STATS = {
   bat: { hp: 10, damage: 10, armor: 0, speed: 2.5, xp: 10 },
@@ -38,9 +36,14 @@ export class GameViewModel {
     this.menuModel = menuModel;
     this.abilitySystem = new AbilitySystem(model, view, this);
     this.weather = new WeatherSystem(this);
+    this.saloonBosses = new SaloonBossSystem(this);
     this.keys = new Set();
     this.colliders = [];
-    this.crowd = new EnemySeparation((x,z,radius)=>this.spotClear(x,z,radius));
+    this.crowd = new EnemySeparation((x,z,radius,enemy)=>{
+      const clear=this.spotClear(x,z,radius,enemy.floor||0);
+      if(clear)enemy.floor=this.view.floorAt(x,z,enemy.floor||0);
+      return clear;
+    });
     this.spawnClock = 1.2;
     this.dogClock = 7;
     this.skeletonClock = 11;
@@ -49,11 +52,13 @@ export class GameViewModel {
     this.chestTimes = [90 + Math.random() * 95, 330 + Math.random() * 95, 610 + Math.random() * 95, 790 + Math.random() * 65];
     this.nextChest = 0;
     this.merchantWindow = -1;
+    this.shopTab='upgrades';this.shopPage=0;this.shopFocus='whip';this.shopNotice='';
     this.invulnerable = 0;
     this.fallbackLook = false;
     this.touchDevice = window.matchMedia('(pointer: coarse)').matches;
     this.touchMove = { forward: 0, strafe: 0 };
     this.onKeyDown = (event) => {
+      if(this.model.phase==='menu')return;
       if (event.code === 'Escape' && (this.fallbackLook || this.touchDevice)) {
         this.pause();
         return;
@@ -97,14 +102,17 @@ export class GameViewModel {
 
   addBoxCollider(minX, maxX, minZ, maxZ, minY=0, maxY=4) { this.colliders.push({ kind: 'box', minX, maxX, minZ, maxZ,minY,maxY }); }
 
-  spotClear(x, z, padding = 0) {
+  spotClear(x, z, padding = 0, feet = this.view.camera.position.y-1.68) {
     const bounds=STAGES[this.model.stage||'desert'].bounds;
     if(bounds.ellipse){if((x/(bounds.ellipse[0]-padding))**2+(z/(bounds.ellipse[1]-padding))**2>1)return false;}
     else if(bounds.x){if(Math.abs(x)>bounds.x-padding||Math.abs(z)>bounds.z-padding)return false;}
     else if (Math.hypot(x, z) > bounds.radius - padding) return false;
-    return this.colliders.every(item => item.kind === 'box'
+    const saloon=this.model.stage==='saloon';
+    if(saloon&&!this.view.saloonStage.canStep(x,z,feet))return false;
+    const floor=saloon?this.view.floorAt(x,z,feet):feet;
+    return this.colliders.every(item => item.walkable||(item.maxY??4)<=floor+.1||(item.minY??0)>=floor+1.75|| (item.kind === 'box'
       ? x < item.minX - padding || x > item.maxX + padding || z < item.minZ - padding || z > item.maxZ + padding
-      : Math.hypot(x - item.x, z - item.z) >= item.radius + padding);
+      : Math.hypot(x - item.x, z - item.z) >= item.radius + padding));
   }
 
   sensitivity() {
@@ -123,7 +131,9 @@ export class GameViewModel {
       await this.view.assetsReady;
       await this.view.selectStage(selection.map);
       this.weather.reset();
+      this.saloonBosses.reset();
       this.starting=false;
+      this.model.resetRun();this.abilitySystem.reset();this.resetRunTimers();
       this.model.deck = this.menuModel.profile.deck.filter(id=>this.menuModel.cardUnlocked(id));
       this.runMissions=(MISSIONS[selection.map]||[]).map(m=>({...m,count:0,completed:false,failed:false}));
       this.runBossKills=new Set();
@@ -150,6 +160,23 @@ export class GameViewModel {
       this.model.setLocked(true);
     }
   }
+  resetRunTimers(){
+    this.spawnClock=1.2;this.dogClock=7;this.skeletonClock=11;this.extraClock=8;
+    this.bandageClock=55+Math.random()*35;
+    this.chestTimes=[90+Math.random()*95,330+Math.random()*95,610+Math.random()*95,790+Math.random()*65];
+    this.nextChest=0;this.merchantWindow=-1;this.invulnerable=0;this.actuallyWalking=false;
+    this.crowd.nextId=1;
+    this.keys.clear();this.touchMove={forward:0,strafe:0};this.shopTab='upgrades';this.shopPage=0;this.shopFocus='whip';this.shopNotice='';
+  }
+  returnToSelection(){
+    if(!['victory','defeat'].includes(this.model.phase))return;
+    const screen=this.model.phase==='victory'?'champion':'map';
+    this.bankLevelCoins();this.releasePointer();this.view.clearRun(this.model);
+    this.model.resetRun();this.abilitySystem.reset();this.weather.reset();this.saloonBosses.reset();this.resetRunTimers();
+    const menu=this.view.menuViewModel;
+    menu.heroFocus=this.menuModel.champion;menu.stageFocus=this.menuModel.map;
+    menu.navigate(screen);this.view.showMenu();this.model.notify();
+  }
 
   async requestLandscape() {
     try {
@@ -172,6 +199,7 @@ export class GameViewModel {
 
   chooseCard(id) {
     if (!this.model.chooseCard(id)) return;
+    this.bankLevelCoins();
     if (this.model.phase === 'upgrade') {
       this.view.showCards(this.model.cardOffers);
       return;
@@ -227,6 +255,7 @@ export class GameViewModel {
           this.spawnWave(delta);
           this.weather.update(delta);
           this.moveEnemies(delta);
+          this.saloonBosses.update(delta);
           this.moveProjectiles(delta);
           this.abilitySystem.update(delta);
           this.collectLoot(delta);
@@ -263,6 +292,7 @@ export class GameViewModel {
     const blocked = (x, z) => !this.spotClear(x, z, 0.48);
     if (!blocked(camera.position.x + dx, camera.position.z)) camera.position.x += dx;
     if (!blocked(camera.position.x, camera.position.z + dz)) camera.position.z += dz;
+    camera.position.y=this.view.floorAt(camera.position.x,camera.position.z,camera.position.y-1.68)+1.68;
     this.actuallyWalking = Math.hypot(camera.position.x-oldX, camera.position.z-oldZ) > .0001;
   }
 
@@ -270,10 +300,22 @@ export class GameViewModel {
     const p=this.view.camera.position;
     if(this.spotClear(p.x+dx,p.z,.48))p.x+=dx;
     if(this.spotClear(p.x,p.z+dz,.48))p.z+=dz;
+    p.y=this.view.floorAt(p.x,p.z,p.y-1.68)+1.68;
   }
 
   spawnWave(delta) {
     const elapsed = this.model.elapsed;
+    if(this.model.stage==='saloon'){
+      this.spawnClock-=delta;
+      if(this.spawnClock<=0){
+        this.spawnClock=Math.max(.65,1.9-elapsed/900);
+        const roster=elapsed<90?['snake','bat','spider']:elapsed<240?['snake','bat','spider','skeleton','zombie']:['snake','bat','spider','skeleton','zombie','ghost'];
+        const limit=this.model.enemies.some(enemy=>enemy.type==='damaMalvina')?40:44;
+        for(let i=0;i<1+Math.floor(elapsed/300)&&this.model.enemies.length<limit;i++)this.spawnEnemy(roster[Math.floor(Math.random()*roster.length)]);
+      }
+      for(const boss of SALOON_BOSSES)if(elapsed>=boss.at&&!this.model.bossesSpawned.has(boss.type)&&this.spawnEnemy(boss.type,boss))this.model.bossesSpawned.add(boss.type);
+      return;
+    }
     if(this.model.stage==='ghostTown'){
       this.spawnClock-=delta;
       if(this.spawnClock<=0){
@@ -333,20 +375,25 @@ export class GameViewModel {
     }
   }
 
-  spawnEnemy(type, boss = null) {
+  spawnEnemy(type, boss = null, options = {}) {
     const visual = boss?.visual || (type==='axeSkeleton'?'skeleton':type);
     if (!this.view.enemyTemplates.has(visual)) return false;
-    const point = this.findEventSpot(boss ? 17 : 25, boss ? 22 : 33,
-      boss?3.2:1.1,(x,z)=>this.model.enemies.every(enemy=>Math.hypot(x-enemy.x,z-enemy.z)>enemy.bodyRadius+(boss?3.2:1.1)));
+    const saloon=this.model.stage==='saloon',feet=options.floor??this.view.camera.position.y-1.68;
+    const scale=boss?.scale??STAGES[this.model.stage]?.enemyScales?.[visual]??null;
+    const padding=saloon?(boss?.bodyRadius??this.view.enemyRadius(visual,Boolean(boss),scale)):(boss?3.2:Math.max(1.1,this.view.enemyRadius(visual,false,scale)));
+    const point = this.findEventSpot(options.min??(saloon?10:boss ? 17 : 25),options.max??(saloon?20:boss ? 22 : 33),
+      padding,(x,z)=>this.model.enemies.every(enemy=>Math.abs((enemy.floor||0)-feet)>1.5||Math.hypot(x-enemy.x,z-enemy.z)>enemy.bodyRadius+padding),feet,options.near);
     if (!point) return false;
     const { x, z } = point;
-    const y = visual === 'bat' ? 2.2 + Math.random() * 1.2 : 0;
-    const object = this.view.addEnemy(visual, x, y, z, Boolean(boss));
+    const floor=this.view.floorAt(x,z,feet);
+    const hover = visual === 'bat' ? (saloon?1.8+Math.random()*.8:2.2+Math.random()*1.2) : visual==='witch'?.7:0;
+    const y=floor+hover;
+    const object = this.view.addEnemy(visual, x, y, z, Boolean(boss),scale,boss?.bodyRadius);
     if (!object) return false;
     const stats = boss || STATS[type];
     const minute = Math.floor(this.model.elapsed / 60);
     const enemy={
-      type, visual, object, x, y, z, boss: Boolean(boss),height:this.view.enemyActors.get(object)?.height,bottom:this.view.enemyActors.get(object)?.bottom,
+      type, visual, object, x, y, z, floor, hover, boss: Boolean(boss),height:this.view.enemyActors.get(object)?.height,bottom:this.view.enemyActors.get(object)?.bottom,
       hp: boss ? stats.hp : Math.round(stats.hp * (1 + minute * 0.18)),
       maxHp: boss ? stats.hp : Math.round(stats.hp * (1 + minute * 0.18)),
       damage: stats.damage, armor: boss ? 3 : stats.armor,
@@ -367,9 +414,11 @@ export class GameViewModel {
       enemy.previousX=oldX;enemy.previousZ=oldZ;
       const dx = player.x - enemy.x, dz = player.z - enemy.z;
       const distance = Math.max(0.001, Math.hypot(dx, dz));
-      if (distance > enemy.bodyRadius+.58) {
+      const handled=this.saloonBosses.updateEnemy(enemy,delta);
+      const destination=!handled&&this.model.stage==='saloon'?this.view.saloonStage.route(enemy,player):player;
+      if (!handled&&(distance > enemy.bodyRadius+.58||Math.abs((enemy.floor||0)-(player.y-1.68))>1.5)) {
         const travel = Math.max(0, enemy.speed - (enemy.knockback || 0)) * delta;
-        const direction=this.crowd.steer(enemy,enemies,dx,dz);
+        const direction=this.crowd.steer(enemy,enemies,destination.x-enemy.x,destination.z-enemy.z);
         this.crowd.move(enemy,direction.x*travel,direction.z*travel);
       }
       if (enemy.knockback > 0) {
@@ -377,25 +426,27 @@ export class GameViewModel {
         enemy.knockback = Math.max(0, enemy.knockback - delta * 25);
       }
       const clearance = enemy.bodyRadius;
-      if (!this.spotClear(enemy.x, enemy.z, clearance)) {
-        if (this.spotClear(enemy.x, oldZ, clearance)) enemy.z = oldZ;
-        else if (this.spotClear(oldX, enemy.z, clearance)) enemy.x = oldX;
+      if (!this.spotClear(enemy.x, enemy.z, clearance,enemy.floor||0)) {
+        if (this.spotClear(enemy.x, oldZ, clearance,enemy.floor||0)) enemy.z = oldZ;
+        else if (this.spotClear(oldX, enemy.z, clearance,enemy.floor||0)) enemy.x = oldX;
         else { enemy.x = oldX; enemy.z = oldZ; }
       }
     }
     this.crowd.resolve(enemies,player);
     for(const enemy of enemies){
       const dx=player.x-enemy.x,dz=player.z-enemy.z,distance=Math.hypot(dx,dz);
+      enemy.floor=this.view.floorAt(enemy.x,enemy.z,enemy.floor||0);
+      enemy.y=enemy.floor+(enemy.hover||0)+(enemy.visual==='witch'?Math.sin(this.saloonBosses.time*2+enemy.phase)*.2:0);
       enemy.object.position.set(enemy.x, enemy.y + (enemy.visual === 'bat' ? Math.sin(this.model.elapsed * 5 + enemy.phase) * 0.28 : 0), enemy.z);
       // Os modelos originais têm a frente em +Z, como no Faroeste Survivors.
       enemy.object.rotation.y = Math.atan2(dx, dz);
       this.view.updateEnemy(enemy.object, delta);
       enemy.vx=(enemy.x-enemy.previousX)/Math.max(.001,delta);enemy.vz=(enemy.z-enemy.previousZ)/Math.max(.001,delta);
-      if (distance < enemy.bodyRadius+.8 && this.invulnerable === 0) {
+      if (distance < enemy.bodyRadius+.8 && Math.abs((enemy.floor||0)-(player.y-1.68))<1.5 && this.invulnerable === 0) {
         this.hurt(enemy.damage);
         this.view.attackEnemy(enemy.object);
       }
-      if (enemy.boss && distance < 28) {
+      if (enemy.boss && this.model.stage!=='saloon' && distance < 28) {
         enemy.shotClock -= delta;
         if (enemy.shotClock <= 0) {
           enemy.shotClock = 3.6;
@@ -413,6 +464,7 @@ export class GameViewModel {
     this.model.health = Math.max(0, this.model.health - amount * 20 / (20 + this.model.attributes().armor));
     this.model.damageFlash = 0.22;
     this.invulnerable = 0.9;
+    if(this.model.health>0&&this.model.abilities.bentoMoonMirror)this.abilitySystem.pendingMirror=true;
   }
 
   bossVolley(enemy) {
@@ -446,6 +498,7 @@ export class GameViewModel {
       shot.z += shot.vz * delta;
       shot.y+=(shot.vy||0)*delta-.5*(shot.gravity||0)*delta*delta;shot.vy=(shot.vy||0)-(shot.gravity||0)*delta;
       shot.object.position.set(shot.x, shot.y, shot.z);
+      if(shot.kind==='fireball'){shot.object.rotation.set(shot.age*3,shot.age*5,0);shot.object.scale.setScalar(1+Math.sin(shot.age*16)*.12);}
       if(shot.kind==='axe')shot.object.rotation.z+=delta*12;
       const wall=obstacleHit(old,shot,this.colliders,.15);
       const hit=segmentSphere(old,shot,{x:player.x,y:player.y-.4,z:player.z},.75);
@@ -466,6 +519,7 @@ export class GameViewModel {
     const { forwardX, forwardZ } = this.view.getPlanarFacing();
     let target = null, nearest = this.model.attributes().range;
     for (const enemy of this.model.enemies) {
+      if(!this.withinPlayerHeight(enemy))continue;
       const dx = enemy.x - camera.position.x, dz = enemy.z - camera.position.z;
       const distance = Math.hypot(dx, dz);
       if (distance >= nearest || distance < 0.001) continue;
@@ -490,6 +544,7 @@ export class GameViewModel {
     const camera = this.view.camera;
     const { forwardX, forwardZ } = this.view.getPlanarFacing();
     for (const enemy of [...this.model.enemies]) {
+      if(!this.withinPlayerHeight(enemy))continue;
       const dx = enemy.x - camera.position.x, dz = enemy.z - camera.position.z;
       const distance = Math.hypot(dx, dz);
       if (distance > this.model.attributes().range) continue;
@@ -504,19 +559,22 @@ export class GameViewModel {
   }
 
   killEnemy(enemy) {
+    const index=this.model.enemies.indexOf(enemy);
+    if(index<0)return;
     this.view.removeEnemy(enemy.object);
-    this.model.enemies.splice(this.model.enemies.indexOf(enemy), 1);
+    this.model.enemies.splice(index, 1);
     this.model.kills += 1;
     const rank = this.model.abilities.soulHarvest;
     if (rank) this.model.health = Math.min(this.model.maxHealth, this.model.health + Math.min(4, rank + 1));
+    if(this.model.health>0)this.model.health=Math.min(this.model.maxHealth,this.model.health+(this.model.abilities.bentoBloodPact||0));
     if(this.model.mode==='campaign'){
       this.menuModel.discover(enemy.type);
       this.missionEvent(enemy.type,1);
-      if(enemy.boss){this.runBossKills.add(enemy.type);this.menuModel.defeatBoss(enemy.type);this.view.showPickupMessage('Chefe derrotado · recompensa desbloqueada');}
+      if(enemy.boss){this.runBossKills.add(enemy.type);this.menuModel.defeatBoss(enemy.type);}
     }
-    this.dropLoot(enemy.x, enemy.z, 'xp', enemy.xp);
+    this.dropLoot(enemy.x, enemy.z, 'xp', enemy.xp,enemy.floor||0);
     const chance = enemy.boss ? 1 : { bat: 0.12, dog: 0.3, skeleton: 0.22 }[enemy.type] ?? 0.15;
-    if (Math.random() < chance) this.dropLoot(enemy.x + 0.5, enemy.z, 'coin', enemy.boss ? (BOSS_COINS[enemy.type] ?? 100) : 15);
+    if (Math.random() < chance) this.dropLoot(enemy.x + 0.5, enemy.z, 'coin', enemy.boss ? (BOSS_COINS[enemy.type] ?? 100) : 15,enemy.floor||0);
   }
 
   missionEvent(kind,amount){
@@ -524,7 +582,7 @@ export class GameViewModel {
     for(const mission of this.runMissions||[]){
       if(mission.completed||mission.failed||mission.kind!==kind||this.model.elapsed<mission.at||this.model.elapsed>mission.at+mission.duration)continue;
       mission.count=Math.min(mission.target,mission.count+amount);
-      if(mission.count===mission.target){mission.completed=true;this.menuModel.completeMission(mission.id);this.view.showPickupMessage('Submissão cumprida · novas recompensas');}
+      if(mission.count===mission.target){mission.completed=true;this.menuModel.completeMission(mission.id);}
     }
   }
   updateMissions(){
@@ -534,32 +592,44 @@ export class GameViewModel {
     this.view.updateMissionHUD(active,this.model.elapsed);
   }
 
-  dropLoot(x, z, kind, value) {
+  withinPlayerHeight(enemy) {
+    if(this.model.stage!=='saloon')return true;
+    const p=this.view.camera.position,feet=p.y-1.68;
+    if(Math.abs((enemy.floor||0)-feet)>1.5)return false;
+    const aim={x:enemy.x,y:enemy.y+(enemy.bottom||0)+(enemy.height||2)*.5,z:enemy.z};
+    return obstacleHit(p,aim,this.colliders,.02)===null;
+  }
+
+  dropLoot(x, z, kind, value, floor=0) {
     if (this.model.loot.length >= 250) {
       this.view.removeLoot(this.model.loot[0].object);
       this.model.loot.shift();
     }
     const object = this.view.addLoot(x, z, kind);
-    this.model.loot.push({ object, x, z, kind, value });
+    object.position.y+=floor;
+    this.model.loot.push({ object, x, z, kind, value, floor });
   }
 
-  findEventSpot(minDistance, maxDistance, clearance=3,accept=()=>true) {
-    const player = this.view.camera.position;
+  findEventSpot(minDistance, maxDistance, clearance=3,accept=()=>true,feet=this.view.camera.position.y-1.68,near=null) {
+    const player = near||this.view.camera.position;
     for (let i = 0; i < 80; i++) {
       const angle = Math.random() * Math.PI * 2;
       const radius = minDistance + Math.random() * (maxDistance - minDistance);
       const x = player.x + Math.cos(angle) * radius;
       const z = player.z + Math.sin(angle) * radius;
-      if (this.spotClear(x, z, clearance)&&accept(x,z)) return { x, z };
+      if (this.spotClear(x, z, clearance,feet)&&accept(x,z)) return { x, z, floor:this.view.floorAt(x,z,feet) };
     }
     return null;
   }
 
   spawnPickup(kind, minDistance, maxDistance, lifetime, value) {
+    if(this.model.stage==='saloon'){minDistance=kind==='chest'?18:8;maxDistance=kind==='chest'?30:18;}
     const point = this.findEventSpot(minDistance, maxDistance);
     if (!point) return false;
     const object = this.view.addEventObject(kind, point.x, point.z);
     if (!object) return false;
+    object.position.y+=point.floor||0;
+    object.userData.floor=point.floor||0;
     this.model.pickups.push({ ...point, kind, object, age: 0, lifetime, value });
     return true;
   }
@@ -585,7 +655,7 @@ export class GameViewModel {
     if (activeWindow >= 0 && !this.model.merchant) {
       const point = this.findEventSpot(17, 29);
       const object = point && this.view.addEventObject('merchant', point.x, point.z);
-      if (object) this.model.merchant = { ...point, object, reentryLocked: false, age: 0 };
+      if (object) {object.position.y+=point.floor||0;object.userData.floor=point.floor||0;this.model.merchant = { ...point, object, reentryLocked: false, age: 0 };}
     }
     const merchant = this.model.merchant;
     if (merchant) {
@@ -593,8 +663,9 @@ export class GameViewModel {
       this.view.updateEventObject(merchant.object, 'merchant', merchant.age);
       const distance = Math.hypot(this.view.camera.position.x - merchant.x, this.view.camera.position.z - merchant.z);
       if (distance > 4) merchant.reentryLocked = false;
-      if (distance < 2.4 && !merchant.reentryLocked) {
+      if (distance < 2.4 && Math.abs((merchant.floor||0)-(this.view.camera.position.y-1.68))<1.5 && !merchant.reentryLocked) {
         this.model.phase = 'merchant';
+        this.shopNotice='';this.shopPage=0;
         this.releasePointer();
         this.view.showRunMerchant(this.model);
         return;
@@ -604,7 +675,7 @@ export class GameViewModel {
       item.age += delta;
       this.view.updateEventObject(item.object, item.kind, item.age);
       const distance = Math.hypot(this.view.camera.position.x - item.x, this.view.camera.position.z - item.z);
-      if (item.age < item.lifetime && distance > (item.kind === 'chest' ? 2.4 : 1.6)) continue;
+      if (item.age < item.lifetime && (distance > (item.kind === 'chest' ? 2.4 : 1.6)||Math.abs((item.floor||0)-(this.view.camera.position.y-1.68))>1.5)) continue;
       this.view.removeEventObject(item.object);
       this.model.pickups.splice(this.model.pickups.indexOf(item), 1);
       if (item.age >= item.lifetime) continue;
@@ -619,18 +690,40 @@ export class GameViewModel {
     }
   }
 
-  merchantPrice(id) { return { whip: 8, health: 12, speed: 10 }[id] * (1 + this.model.runShopPurchases[id]); }
-
-  buyFromMerchant(id) {
-    if (this.model.phase !== 'merchant' || !['whip', 'health', 'speed'].includes(id)) return;
-    const price = this.merchantPrice(id);
-    if (this.model.coins < price) return;
-    this.model.coins -= price;
-    this.model.runShopPurchases[id]++;
-    if (id === 'whip') this.model.upgrades.damage++;
-    if (id === 'speed') this.model.upgrades.speed++;
-    if (id === 'health') this.model.health = Math.min(this.model.maxHealth, this.model.health + 25);
+  merchantAction(action){
+    if(this.model.phase!=='merchant')return;
+    const [,command,value]=action.split(':');
+    if(command==='tab'&&['upgrades','cards'].includes(value)){this.shopTab=value;this.shopPage=0;this.shopFocus=null;this.shopNotice='';}
+    if(command==='page'){this.shopPage+=Number(value)||0;this.shopNotice='';}
+    if(command==='focus')this.shopFocus=value;
+    if(command==='buy')this.buyFromMerchant(value);
     this.view.showRunMerchant(this.model);
+  }
+  buyFromMerchant(id) {
+    if(this.model.phase!=='merchant')return;
+    const cards=this.shopTab==='cards',products=cards?licenseProducts(this.menuModel,this.model):runProducts(this.menuModel,this.model);
+    const product=products.find(item=>item.id===id);
+    if(!product?.enabled){this.shopNotice='Compra indisponível. Confira o saldo e os requisitos.';return;}
+    const bought=cards&&!product.owned?this.menuModel.buyCard(id):this.menuModel.spendCoins(product.price);
+    if(!bought)return;
+    this.model.coins-=product.price;
+    if(cards){
+      this.model.grantAbility(id);
+      // Cards bought during the run can appear in its subsequent level offers.
+      if(!(this.model.deck||[]).includes(id))this.model.deck=[...(this.model.deck||[]),id];
+      this.shopNotice=product.owned?'Carta evoluída nesta partida.':'Carta adquirida e ativada! Disponível no Arsernal.';
+    }else{
+      this.model.runShopPurchases[id]=(this.model.runShopPurchases[id]||0)+1;
+      const item=RUN_UPGRADES[id];
+      if(item.stat)this.model.upgrades[item.stat]++;
+      if(id==='health')this.model.health=Math.min(this.model.maxHealth,this.model.health+25);
+      this.shopNotice='Suprimento aplicado nesta partida.';
+    }
+    this.model.notify();
+  }
+  bankLevelCoins(){
+    if(!this.model.bankedLevelCoins)return;
+    this.menuModel.addCoins(this.model.bankedLevelCoins);this.model.bankedLevelCoins=0;
   }
 
   leaveMerchant() {
@@ -644,7 +737,7 @@ export class GameViewModel {
   collectLoot(delta) {
     const player = this.view.camera.position;
     for (const item of [...this.model.loot]) {
-      if (Math.hypot(player.x - item.x, player.z - item.z) < this.model.attributes().magnet) {
+      if (Math.abs((item.floor||0)-(player.y-1.68))<1.5 && Math.hypot(player.x - item.x, player.z - item.z) < this.model.attributes().magnet) {
         this.view.removeLoot(item.object);
         this.model.loot.splice(this.model.loot.indexOf(item), 1);
         if (item.kind === 'coin') {
@@ -652,8 +745,9 @@ export class GameViewModel {
           this.model.coins += coins;
           this.missionEvent('coins',coins);
           this.menuModel.addCoins(coins);
+          this.model.health=Math.min(this.model.maxHealth,this.model.health+Math.min(5,this.model.abilities.bentoMercyCoin||0));
         }
-        else this.model.addExperience(item.value);
+        else {this.model.addExperience(item.value);this.bankLevelCoins();}
         if (this.model.phase === 'upgrade') {
           this.view.showCards(this.model.cardOffers);
           this.releasePointer();

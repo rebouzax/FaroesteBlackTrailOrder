@@ -2,7 +2,7 @@
 
 Sete arquivos `.blend` fornecidos pelo jogador foram inspecionados com Blender 5.2.2, sem salvar alterações nos originais. O utilitário `game-dev` não está instalado; a inspeção usou a API local do Blender. O relatório `future-bosses.json` registra hashes, malhas, rigs, ações e referências de textura.
 
-Cerberus, o modelo `gob_bod4_non5_rig3_a10` (Devorador de Almas) e ChainedDemon (Carrasco Acorrentado) estão integrados como chefes da fase III, Cidade Fantasma. Os demais continuam reservados para futuras fases. Nenhum desses novos bosses participa das ondas de inimigos comuns.
+Cerberus, o modelo `gob_bod4_non5_rig3_a10` (Devorador de Almas) e ChainedDemon (Carrasco Acorrentado) estão integrados como chefes da fase III, Cidade Fantasma. `wizard2.blend` é a base da Dama Malvina no capítulo IV, Salão Fantasma, com rig e clips gerados no GLB derivado. Os demais continuam reservados para futuras fases. Nenhum desses novos bosses participa das ondas de inimigos comuns.
 
 As exportações preservam os arquivos originais e usam texturas embutidas de até 512 pixels. Os slots antigos de animação sem tipo de alvo foram convertidos para objetos, recuperando as cinco ações do Cerberus. `city-boss-exports.json` registra origem/texturas/hashes; `city-glb-inspection.json` registra inspeção dos GLBs, rigs, animações, imagens embutidas e valores numéricos finitos. A importação visual em Three.js é conferida separadamente.
 

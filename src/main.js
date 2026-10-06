@@ -1,6 +1,9 @@
 import './styles.css';
 import './menu-fit.css';
 import './dark-frontier.css';
+import './selection-carousel.css';
+import './bento-shop.css';
+import './journey-feedback.css';
 import { GameApplication } from './app/GameApplication.js';
 
 const game = new GameApplication(document.querySelector('#game'));

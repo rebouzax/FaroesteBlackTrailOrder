@@ -1,6 +1,7 @@
 import { INITIAL_CARDS, MISSIONS, BOSS_REWARDS, CLEAR_REWARDS, cardUnlocked, refreshCardRewards } from '../config/campaign.js';
 import { ABILITIES } from '../config/abilityConfig.js';
 import { CHAMPIONS } from '../config/champions.js';
+import { BENTO_CARD_STOCK, PERMANENT_UPGRADES, shopOpen, shopEligible, upgradeLimit, upgradePrice } from '../config/bentoShop.js';
 const STORAGE_KEY = 'faroeste-black-trail-order-profile-v1';
 const DEFAULT_PROFILE = { coins: 0, deck: INITIAL_CARDS, purchases: { damage: 0, health: 0, speed: 0 }, discoveries: [] };
 
@@ -11,12 +12,13 @@ export class MenuModel {
     this.profile = {
       coins: Number.isFinite(saved.coins) ? Math.max(0, saved.coins) : 0,
       deck: Array.isArray(saved.deck) ? [...new Set(saved.deck.filter(id => ABILITIES[id]))].slice(0, 8) : [...DEFAULT_PROFILE.deck],
-      purchases: { ...DEFAULT_PROFILE.purchases, ...saved.purchases },
+      purchases: Object.fromEntries(Object.entries(PERMANENT_UPGRADES).map(([id,item])=>[id,Math.min(item.max,Math.max(0,Math.floor(Number(saved.purchases?.[id])||0)))])),
       discoveries: Array.isArray(saved.discoveries) ? saved.discoveries.filter(id=>id!=='crow') : [],
       storyClears: saved.storyClears && typeof saved.storyClears==='object' ? saved.storyClears : {},
       missionClears: Array.isArray(saved.missionClears)?saved.missionClears:[],
       bossKills: Array.isArray(saved.bossKills)?saved.bossKills:[],
       unlockedCards: Array.isArray(saved.unlockedCards)?saved.unlockedCards.filter(id=>ABILITIES[id]):[],
+      bentoCards: [...new Set([...(Array.isArray(saved.bentoCards)?saved.bentoCards:[]),...(Array.isArray(saved.unlockedCards)?saved.unlockedCards.filter(id=>ABILITIES[id]?.price):[])])].filter(id=>ABILITIES[id]?.price),
       unlockedHeroes: Array.isArray(saved.unlockedHeroes)?saved.unlockedHeroes.filter(id=>CHAMPIONS[id]):['joao'],
     };
     refreshCardRewards(this.profile);
@@ -65,9 +67,9 @@ export class MenuModel {
   }
 
   heroUnlocked(id){return id==='joao'||id==='ana'&&Boolean(this.profile.storyClears.ghostTown)||this.profile.unlockedHeroes.includes(id);}
-  stageUnlocked(id){return id==='desert'||id==='mine'&&Boolean(this.profile.storyClears.desert)||id==='ghostTown'&&Boolean(this.profile.storyClears.mine);}
+  stageUnlocked(id){return id==='desert'||id==='mine'&&Boolean(this.profile.storyClears.desert)||id==='ghostTown'&&Boolean(this.profile.storyClears.mine)||id==='saloon'&&Boolean(this.profile.storyClears.ghostTown);}
   cardUnlocked(id){return cardUnlocked(this.profile,id);}
-  merchantUnlocked(){return this.profile.bossKills.length>0;}
+  merchantUnlocked(){return shopOpen(this.profile);}
   completeMission(id){
     const mission=Object.values(MISSIONS).flat().find(m=>m.id===id);
     if(!mission||this.profile.missionClears.includes(id))return [];
@@ -81,6 +83,7 @@ export class MenuModel {
   }
   clearStage(id){
     this.profile.storyClears[id]=true;
+    if(id==='saloon')this.profile.storyClears.midnightSaloon=true;
     if(id==='ghostTown'){
       this.profile.storyClears.town=true;
       if(!this.profile.unlockedHeroes.includes('ana'))this.profile.unlockedHeroes.push('ana');
@@ -88,19 +91,29 @@ export class MenuModel {
     this.profile.unlockedCards=[...new Set([...this.profile.unlockedCards,...(CLEAR_REWARDS[id]||[])])];refreshCardRewards(this.profile);this.save();
   }
   price(id) {
-    const base = { damage: 18, health: 15, speed: 14 }[id];
-    const rank = this.profile.purchases[id] || 0;
-    return base * (rank + 1);
+    return PERMANENT_UPGRADES[id]?upgradePrice(id,this.profile.purchases[id]||0):Infinity;
   }
 
   buy(id) {
-    if (!this.merchantUnlocked() || !['damage', 'health', 'speed'].includes(id)) return false;
+    const item=PERMANENT_UPGRADES[id];
+    if (!item || !shopEligible(this.profile,item)) return false;
     const rank = this.profile.purchases[id] || 0;
     const price = this.price(id);
-    if (rank >= 5 || this.profile.coins < price) return false;
+    if (rank >= Math.min(item.max,upgradeLimit(this.profile)) || this.profile.coins < price) return false;
     this.profile.coins -= price;
     this.profile.purchases[id] = rank + 1;
     this.save();
     return true;
+  }
+  spendCoins(amount){
+    if(!Number.isFinite(amount)||amount<0||this.profile.coins<amount)return false;
+    this.profile.coins-=amount;this.save();return true;
+  }
+  buyCard(id){
+    const card=BENTO_CARD_STOCK[id];
+    if(!card||this.profile.bentoCards.includes(id)||!shopEligible(this.profile,card)||!this.spendCoins(card.price))return false;
+    this.profile.bentoCards.push(id);
+    if(!this.profile.unlockedCards.includes(id))this.profile.unlockedCards.push(id);
+    refreshCardRewards(this.profile);this.save();return true;
   }
 }

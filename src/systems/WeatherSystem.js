@@ -4,6 +4,10 @@ export class WeatherSystem {
   }
   reset(){this.state={kind:'clear',age:0,duration:0,strikes:[],tornado:null};this.clock=50;this.cycle=0;this.boltClock=3;}
   update(dt) {
+    if(!['desert','ghostTown'].includes(this.game.model.stage)){
+      if(this.state.kind!=='clear'||this.state.strikes.length||this.state.tornado)this.reset();
+      return;
+    }
     const g=this.game,m=g.model,w=this.state;w.age+=dt;this.clock-=dt;
     if(this.clock<=0&&w.kind==='clear'){
       w.kind=['rain','sand','tornado'][this.cycle++%3];w.age=0;w.duration=38+Math.random()*18;this.boltClock=2;
@@ -22,7 +26,7 @@ export class WeatherSystem {
         let spot=target?{x:target.x,z:target.z}:null;
         if(!spot&&Math.random()<.45)spot=g.findEventSpot(0,55);
         if(!spot)for(let i=0;i<30;i++){
-          const bounds=g.view.currentStage==='ghostTown'?{x:260,z:270}:g.view.currentStage==='mine'?{x:38,z:76}:{x:235,z:235};
+          const bounds=g.view.currentStage==='ghostTown'?{x:260,z:270}:{x:235,z:235};
           const x=(Math.random()*2-1)*bounds.x,z=(Math.random()*2-1)*bounds.z;
           if(g.spotClear(x,z,1)){spot={x,z};break;}
         }

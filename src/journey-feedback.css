@@ -1,0 +1,17 @@
+.death-banner[hidden],.merchant-indicator[hidden]{display:none}
+.death-banner{position:absolute;inset:0;z-index:13;display:grid;place-items:center;pointer-events:none;background:radial-gradient(ellipse,#10070530,#0009);overflow:hidden}
+.death-banner strong{display:block;width:100%;padding:26px 12px;text-align:center;font:400 clamp(38px,7vw,100px)/1.2 Georgia,'Times New Roman',serif;text-transform:uppercase;letter-spacing:.11em;color:#a02b25;text-shadow:0 2px 6px #000,0 0 28px #5f111180;background:linear-gradient(transparent,#0803059c 32%,#0803059c 68%,transparent);animation:death-inscription 2.6s ease-out both}
+.game-root.is-death canvas{filter:grayscale(.9) brightness(.48);transition:filter .6s}
+@keyframes death-inscription{0%{opacity:0;transform:scale(.92);filter:blur(4px)}18%{opacity:1;filter:blur(0)}76%{opacity:1}100%{opacity:0;transform:scale(1.035)}}
+.end-overlay{z-index:12;background:#0b0712c9;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+.end-overlay .end-panel{width:min(640px,100%);max-height:100%;overflow:hidden;border-color:#967148;background:radial-gradient(ellipse at 50% 0%,#61412850,transparent 70%),linear-gradient(145deg,#211923,#110f18);padding:clamp(16px,4dvh,34px);box-shadow:inset 0 0 0 5px #09070b80,0 20px 70px #000b}
+.end-panel h2{font:clamp(25px,5dvh,43px)/1.2 Georgia,serif;color:#ebc593}.end-panel p{line-height:1.5;margin:12px auto 24px;max-width:450px;color:#c3b5a5}
+.end-panel .restart-button{min-height:44px;padding:11px 18px;color:#f5d7ac;border:1px solid #d0a064;background:linear-gradient(115deg,#774626,#493027);font-size:14px;letter-spacing:.075em;cursor:pointer}
+.restart-button:focus-visible{outline:2px solid #ffe0a8;outline-offset:4px}
+.merchant-indicator{position:absolute;right:max(14px,env(safe-area-inset-right));top:100px;z-index:5;display:flex;gap:10px;align-items:center;padding:9px 12px;background:linear-gradient(110deg,#1d1625df,#241c1bdf);border:1px solid #b48a56;color:#e6c391;box-shadow:0 4px 20px #0006;pointer-events:none}
+.merchant-bearing{display:block;font:29px/1 Georgia,serif;color:#f0d295;transform-origin:50% 50%}
+.merchant-indicator b{display:block;font-size:13px;letter-spacing:.12em}.merchant-distance{display:block;color:#c4b49c;font:10px/1.2 sans-serif;margin-top:3px}
+.merchant-bag{font:26px Georgia,serif;color:#e7be76;animation:bento-beacon 1.5s ease-in-out infinite}
+@keyframes bento-beacon{0%,100%{transform:translateY(2px);opacity:.65}50%{transform:translateY(-4px);opacity:1}}
+@media(max-width:650px),(max-height:500px){.merchant-indicator{top:83px;gap:6px;padding:6px 8px}.merchant-indicator b{font-size:10px}.merchant-bearing,.merchant-bag{font-size:23px}.merchant-distance{font-size:9px}.end-panel p{font-size:12px;margin:8px auto 15px}.end-panel .restart-button{font-size:11px;min-height:38px}}
+@media(prefers-reduced-motion:reduce){.death-banner strong,.merchant-bag{animation:none}.game-root.is-death canvas{transition:none}}

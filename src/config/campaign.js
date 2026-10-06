@@ -1,6 +1,12 @@
 import { ABILITIES } from './abilityConfig.js';
+import { shopRequirement } from './bentoShop.js';
 export const INITIAL_CARDS=['pistol','molotov','heart','horseshoe','doubleShot','deadeye'];
 export const MISSIONS={
+  saloon:[
+    {id:'saloon:1',at:75,duration:150,kind:'spider',target:12,title:'Abata 12 aranhas',cards:['ironRosary']},
+    {id:'saloon:2',at:320,duration:160,kind:'skeleton',target:15,title:'Abata 15 esqueletos',cards:['saloonTempest']},
+    {id:'saloon:3',at:565,duration:170,kind:'ghost',target:10,title:'Liberte 10 almas do salão',cards:['crowstorm']},
+  ],
   desert:[
     {id:'desert:1',at:45,duration:120,kind:'bat',target:10,title:'Abata 10 morcegos',hero:'maria',cards:['ghostShot']},
     {id:'desert:2',at:250,duration:150,kind:'coins',target:8,title:'Recolha 8 moedas',hero:'labuta',cards:['ironWill']},
@@ -17,10 +23,11 @@ export const MISSIONS={
     {id:'ghostTown:3',at:555,duration:165,kind:'ghoul',target:10,title:'Abata 10 ghouls',cards:['pirateBomb']},
   ],
 };
-export const BOSS_REWARDS={giantBat:['requiem'],fireChupacabra:['saltedRounds'],shadowMarshal:['lastStand'],mineGhoul:['ironCharm'],mineWendigo:['returningBlade'],minerGeneral:['pirateBomb'],cityCerberus:['bulwark'],cityDevourer:['boneStorm'],cityChainedDemon:['silverStorm']};
-export const CLEAR_REWARDS={desert:['bloodOath','dustWaltz'],mine:['blueTonic','longshot','inferno','silverStorm'],ghostTown:['bloodOath','requiem']};
+export const BOSS_REWARDS={giantBat:['requiem'],fireChupacabra:['saltedRounds'],shadowMarshal:['lastStand'],mineGhoul:['ironCharm'],mineWendigo:['returningBlade'],minerGeneral:['pirateBomb'],cityCerberus:['bulwark'],cityDevourer:['boneStorm'],cityChainedDemon:['silverStorm'],saloonSpider:['ironRosary'],saloonSkeleton:['saloonTempest'],damaMalvina:['marshfire']};
+export const CLEAR_REWARDS={desert:['bloodOath','dustWaltz'],mine:['blueTonic','longshot','inferno','silverStorm'],ghostTown:['bloodOath','requiem'],saloon:['crowstorm','windwardOath']};
 export function cardUnlocked(profile,id){
   if(!ABILITIES[id])return false;
+  if(ABILITIES[id].price)return (profile.bentoCards||[]).includes(id);
   return INITIAL_CARDS.includes(id)||profile.unlockedCards.includes(id);
 }
 export function refreshCardRewards(profile){
@@ -36,12 +43,13 @@ export function refreshCardRewards(profile){
   }}
 }
 export function unlockHint(id){
+  if(ABILITIES[id]?.price)return `Exclusiva de Bento · ${shopRequirement(ABILITIES[id])}`;
   if(id==='ana')return 'Conclua a Cidade Fantasma';
   const mission=Object.values(MISSIONS).flat().find(m=>m.hero===id||m.cards.includes(id));
-  if(mission)return `${mission.id.startsWith('desert')?'Deserto':mission.id.startsWith('mine')?'Mina':'Cidade Fantasma'} · ${mission.title}`;
+  if(mission)return `${mission.id.startsWith('desert')?'Deserto':mission.id.startsWith('mine')?'Mina':mission.id.startsWith('saloon')?'Salão Fantasma':'Cidade Fantasma'} · ${mission.title}`;
   const boss=Object.entries(BOSS_REWARDS).find(([,cards])=>cards.includes(id));
-  if(boss)return `Derrote ${ {giantBat:'o Morcego Gigante',fireChupacabra:'o Chupacabra',shadowMarshal:'o Marechal',mineGhoul:'o Ghoul',mineWendigo:'o Wendigo',minerGeneral:'o General Mineiro',cityCerberus:'o Cerberus',cityDevourer:'o Devorador de Almas',cityChainedDemon:'o Carrasco Acorrentado'}[boss[0]] }`;
+  if(boss)return `Derrote ${ {saloonSpider:'a Viúva do Salão',saloonSkeleton:'o Barman das Cinzas',damaMalvina:'a Dama Malvina',giantBat:'o Morcego Gigante',fireChupacabra:'o Chupacabra',shadowMarshal:'o Marechal',mineGhoul:'o Ghoul',mineWendigo:'o Wendigo',minerGeneral:'o General Mineiro',cityCerberus:'o Cerberus',cityDevourer:'o Devorador de Almas',cityChainedDemon:'o Carrasco Acorrentado'}[boss[0]] }`;
   const clear=Object.entries(CLEAR_REWARDS).find(([,cards])=>cards.includes(id));
-  if(clear)return `Conclua ${clear[0]==='desert'?'o Deserto':clear[0]==='mine'?'a Mina':'a Cidade Fantasma'}`;
+  if(clear)return `Conclua ${clear[0]==='desert'?'o Deserto':clear[0]==='mine'?'a Mina':clear[0]==='saloon'?'o Salão Fantasma':'a Cidade Fantasma'}`;
   return 'Avance na campanha para conquistar esta carta';
 }

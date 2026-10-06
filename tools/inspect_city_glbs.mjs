@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 const components={SCALAR:1,VEC2:2,VEC3:3,VEC4:4,MAT2:4,MAT3:9,MAT4:16};
 const report=[];
-for(const filename of ['city-cerberus.glb','city-devourer.glb','city-chained-demon.glb']){
+const filenames=process.argv.slice(2).length?process.argv.slice(2):['city-cerberus.glb','city-devourer.glb','city-chained-demon.glb'];
+for(const filename of filenames){
   const bytes=fs.readFileSync(`public/models/${filename}`),jsonSize=bytes.readUInt32LE(12);
   if(bytes.readUInt32LE(0)!==0x46546c67||bytes.readUInt32LE(4)!==2||bytes.readUInt32LE(8)!==bytes.length)throw new Error(`Invalid GLB: ${filename}`);
   const gltf=JSON.parse(bytes.subarray(20,20+jsonSize).toString()),binStart=28+jsonSize;
@@ -16,5 +17,5 @@ for(const filename of ['city-cerberus.glb','city-devourer.glb','city-chained-dem
   report.push({filename,bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),skins:gltf.skins.length,
     textures:gltf.images.length,animations:gltf.animations.map(a=>a.name),finiteFloatAccessors:true});
 }
-fs.writeFileSync('docs/assets/city-glb-inspection.json',JSON.stringify(report,null,2)+'\n');
+fs.writeFileSync(filenames.includes('saloon-malvina.glb')?'docs/assets/malvina-glb-inspection.json':'docs/assets/city-glb-inspection.json',JSON.stringify(report,null,2)+'\n');
 console.log(JSON.stringify(report.map(({filename,skins,textures,animations})=>({filename,skins,textures,animations}))));

@@ -13,14 +13,16 @@ export class WeatherView {
   }
   put(mesh,i,x,y,z,scale=1,rx=0,rz=0){this.dummy.position.set(x,y,z);this.dummy.rotation.set(rx,i*.4,rz);this.dummy.scale.setScalar(scale);this.dummy.updateMatrix();mesh.setMatrixAt(i,this.dummy.matrix);}
   update(w,player,time,stage) {
+    this.group.visible=['desert','ghostTown'].includes(stage);
+    if(!this.group.visible){this.flash.intensity=0;return;}
     this.rain.count=w.kind==='rain'?420:0;this.sand.count=w.kind==='sand'?300:0;
-    const roof=stage==='mine'?6:22;
+    const roof=22;
     for(let i=0;i<this.rain.count;i++)this.put(this.rain,i,player.x+((i*17.3+time*2)%60)-30,roof-((time*18+i*.43)%roof),player.z+((i*7.7)%60)-30,1,0,-.12);
-    for(let i=0;i<this.sand.count;i++)this.put(this.sand,i,player.x+((i*13.7+time*12)%64)-32,.15+((i*1.31+time*.7)%(stage==='mine'?5:8)),player.z+((i*9.1+time*3)%64)-32,.5+(i%4)*.4,0,time+i);
+    for(let i=0;i<this.sand.count;i++)this.put(this.sand,i,player.x+((i*13.7+time*12)%64)-32,.15+((i*1.31+time*.7)%8),player.z+((i*9.1+time*3)%64)-32,.5+(i%4)*.4,0,time+i);
     this.vortex.count=w.tornado?160:0;
     this.funnel.visible=Boolean(w.tornado);
     if(w.tornado){
-      const height=stage==='mine'?6:12;this.funnel.position.set(w.tornado.x,height/2,w.tornado.z);this.funnel.scale.set(1,height/12,1);this.funnel.rotation.y=time*2;
+      const height=12;this.funnel.position.set(w.tornado.x,height/2,w.tornado.z);this.funnel.scale.set(1,height/12,1);this.funnel.rotation.y=time*2;
       for(let i=0;i<160;i++){const h=i/160*height,angle=time*8+i*2.399,r=.45+h*.22;this.put(this.vortex,i,w.tornado.x+Math.cos(angle)*r,h,w.tornado.z+Math.sin(angle)*r,.6+h*.1,time,angle);}
     }
     this.warnings.count=0;this.bolts.count=0;this.flash.intensity=0;

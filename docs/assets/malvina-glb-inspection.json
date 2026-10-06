@@ -1,0 +1,16 @@
+[
+  {
+    "filename": "saloon-malvina.glb",
+    "bytes": 330096,
+    "sha256": "95fde2df1231d7657e6f3ab3befadb806073e30b966bfbdf899d4c6f42007d57",
+    "skins": 1,
+    "textures": 1,
+    "animations": [
+      "Cast",
+      "Dance",
+      "Hover",
+      "Hurt"
+    ],
+    "finiteFloatAccessors": true
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "source": "wizard2.blend",
+  "sourceSha256": "16f8eb1c4004cfb7e63e5b839469d97f73efff07949f93343be9e2a5e1c59657",
+  "output": "saloon-malvina.glb",
+  "outputSha256": "95fde2df1231d7657e6f3ab3befadb806073e30b966bfbdf899d4c6f42007d57",
+  "bytes": 330096,
+  "texture": "texture_low.png",
+  "textureLimit": 512,
+  "rig": "generated spatial skin",
+  "clips": [
+    "Hover",
+    "Cast",
+    "Dance",
+    "Hurt"
+  ],
+  "license": "user-supplied; unspecified"
+}

@@ -1,7 +1,9 @@
 import { FRONTIER_CARDS, frontierCardStats } from "./frontierCards.js";
+import { BENTO_CARDS, bentoCardStats, bentoCardDescription } from './bentoCards.js';
 export const ABILITY_IDS = [...Object.keys(FRONTIER_CARDS), "pistol", "molotov", "heart", "horseshoe", "ghostShot", "requiem", "silverRain", "lantern", "soulHarvest", "boneStorm", "ironWill", "lastStand", "bulwark", "inferno", "silverStorm", "ironCharm", "deadeye", "bloodOath", "saltedRounds", "dustWaltz", "ironRosary", "blueTonic", "longshot", "bentoHourglass", "bentoLuckyStar", "bentoSaddle", "bentoMercyCoin", "bentoGhostLead", "windwardOath", "saloonTempest", "marshfire", "railbreaker", "crowstorm"];
-export const abilityMaxLevel = id => id === 'doubleShot' ? 6 : 4;
+export const abilityMaxLevel = id => id === 'doubleShot' ? 6 : BENTO_CARDS[id] ? 5 : 4;
 ABILITY_IDS.push('doubleShot');
+ABILITY_IDS.push(...Object.keys(BENTO_CARDS).filter(id=>!ABILITY_IDS.includes(id)));
 export const ABILITIES = {
   doubleShot: {name:'Disparo Duplicado',icon:'⇶',suit:'FERRO',color:'steel'},
   ...FRONTIER_CARDS,
@@ -38,19 +40,16 @@ export const ABILITIES = {
   ironRosary: { name: "Rosário de Ferro", icon: "⬟", suit: "DEFESA", color: "heart" },
   blueTonic: { name: "Tônico Azul", icon: "♥", suit: "VIDA", color: "heart" },
   longshot: { name: "Mira do Horizonte", icon: "➶", suit: "FERRO", color: "steel" },
-  bentoHourglass: { name: "Ampulheta de Bento", icon: "⌛", suit: "MERCADOR", color: "steel" },
-  bentoLuckyStar: { name: "Estrela da Sorte", icon: "✣", suit: "MERCADOR", color: "heart" },
-  bentoSaddle: { name: "Sela do Relâmpago", icon: "➤", suit: "MERCADOR", color: "fire" },
-  bentoMercyCoin: { name: "Moeda da Misericórdia", icon: "☥", suit: "MERCADOR", color: "heart" },
-  bentoGhostLead: { name: "Chumbo Fantasma", icon: "✧", suit: "MERCADOR", color: "steel" },
   windwardOath: { name: "Juramento do Vendaval", icon: "◌", suit: "VENTO", color: "fire" },
   saloonTempest: { name: "Tempestade do Saloon", icon: "✺", suit: "FOGO", color: "steel" },
   marshfire: { name: "Fogo do Pântano", icon: "♨", suit: "MALDIÇÃO", color: "fire" },
   railbreaker: { name: "Quebra-Trilhos", icon: "➤", suit: "FERRO", color: "steel" },
   crowstorm: { name: "Nuvem de Corvos", icon: "✷", suit: "SOMBRA", color: "heart" },
+  ...BENTO_CARDS,
 };
 export function abilityStats(id, level) {
   if(id==='doubleShot')return {count:Math.min(6,Math.max(0,level))};
+  if(BENTO_CARDS[id])return bentoCardStats(id,level);
   if (FRONTIER_CARDS[id]) return frontierCardStats(id, level);
   const extra = Math.max(0, level - 1);
   if (id === "pistol")
@@ -87,11 +86,6 @@ export function abilityStats(id, level) {
   if (id === "ironRosary") return { armor: 2 * level };
   if (id === "blueTonic") return { health: 18 * level, heal: 12 * level };
   if (id === "longshot") return { range: 2 * level };
-  if (id === "bentoHourglass") return { haste: 0.04 * level };
-  if (id === "bentoLuckyStar") return { fortune: 0.1 * level };
-  if (id === "bentoSaddle") return { speed: 0.05 * level };
-  if (id === "bentoMercyCoin") return { heal: 3 * level };
-  if (id === "bentoGhostLead") return { damage: 2 * level };
   if (id === "windwardOath") return { speed: 0.08 * level, armor: level };
   if (id === "saloonTempest") return { damage: 5 * level };
   if (id === "marshfire") return { damage: 3 * level, heal: level };
@@ -100,18 +94,19 @@ export function abilityStats(id, level) {
   return { health: 20 };
 }
 export function cardDescription(id, nextLevel, attackRate = 1, champion = 'joao') {
+  if(BENTO_CARDS[id])return bentoCardDescription(id,nextLevel,attackRate);
   const stats = abilityStats(id, nextLevel);
   if (FRONTIER_CARDS[id]?.stats || !['doubleShot','pistol','molotov','horseshoe','ghostShot','requiem','silverRain','lantern','soulHarvest','boneStorm','ironWill','lastStand','bulwark','inferno','silverStorm','ironCharm','deadeye','bloodOath','heart'].includes(id)) {
     const labels = { damage:'dano',health:'vida máxima',armor:'armadura',range:'alcance (m)',haste:'velocidade de ataque',crit:'chance crítica',speed:'velocidade',magnet:'atração (m)',fortune:'moedas e XP',regen:'regeneração/s',heal:'cura',cooldown:'intervalo (s)' };
     return Object.entries(stats).map(([key,value]) => { const percent=['haste','crit','speed','fortune'].includes(key); return `${Number((value*(percent?100:1)).toFixed(2))}${percent?'%':''} ${labels[key]||key}`; }).join(' · ');
   }
-  if(id==='doubleShot')return `+${stats.count} disparos extras em sequência (máximo +6): arma, Pistola do Sertão, magias, bumerangues e bombas. A escopeta repete a salva inteira; Ana repete o par. Não duplica chicote, auras ou ferraduras.`;
+  if(id==='doubleShot')return `+${stats.count} disparos extras (máximo +6). Molotov e dinamite se espalham: frente, trás, laterais e diagonais; no máximo, 7 arremessos em círculo. Armas repetem a salva; Ana repete o par. Não duplica chicote, auras ou ferraduras.`;
   if(id==='pistol'&&champion==='ana')return `Fortalece as duas pistolas de Ana: +${(stats.damage*.35).toFixed(2)} de dano por bala e +${nextLevel*8}% de cadência. Usa as armas existentes e combina com Disparo Duplicado.`;
   if(id==='pistol'&&champion==='maria')return `Maria faz uma rajada com seu próprio revólver: ${stats.damage} de dano base a cada ${(stats.cooldown/attackRate).toFixed(2)} s. Combina com Disparo Duplicado.`;
   if (id === "pistol")
     return `${stats.damage} de dano · um tiro a cada ${Math.max(0.15, stats.cooldown / attackRate).toFixed(2)} s.`;
   if (id === "molotov")
-    return `${stats.damage} de dano/s · fogo por ${stats.duration.toFixed(2)} s · arremesso a cada ${Math.max(0.7, stats.cooldown / attackRate).toFixed(2)} s.`;
+    return `${stats.damage} de dano/s · fogo por ${stats.duration.toFixed(2)} s · arremesso a cada ${Math.max(0.7, stats.cooldown / attackRate).toFixed(2)} s. Disparo Duplicado espalha os arremessos ao redor do campeão.`;
   if (id === "horseshoe") return `${stats.count} ferraduras giram ao redor do campeão · ${stats.damage} de dano por contato.`;
   if (id === "ghostShot") return `${stats.damage} de dano · atravessa ${stats.pierce} inimigos · a cada ${(stats.cooldown / attackRate).toFixed(2)} s.`;
   if (id === "requiem") return `Onda de poeira de ${stats.radius.toFixed(1)} m · ${stats.damage} de dano e empurra inimigos · a cada ${(stats.cooldown / attackRate).toFixed(2)} s.`;

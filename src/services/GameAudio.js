@@ -1,3 +1,4 @@
+import { STAGE_MUSIC } from '../config/music.js';
 const AUDIO_BASE=import.meta.env?.BASE_URL||'/';
 export class GameAudio {
   constructor() {
@@ -59,11 +60,12 @@ export class GameAudio {
   startMusic() {
     if (this.disposed || this.musicPaused) return;
     if (this.mode === 'menu') { this.menuTrack.play().catch(() => {}); return; }
+    if (STAGE_MUSIC[this.mode]===null)return;
     if (!this.context || this.context.state !== 'running' || this.musicSource) return;
     this.musicBuffers ||= {}; this.musicLoads ||= {};
-    const key=this.mode==='mine'?'mine':'desert';
+    const key=STAGE_MUSIC[this.mode]?this.mode:'desert',track=STAGE_MUSIC[key];
     if (!this.musicBuffers[key]) {
-      if (!this.musicLoads[key]) this.musicLoads[key] = fetch(`${AUDIO_BASE}audio/${key==='mine'?'mine-prospector':'desert-iron-boots'}.mp3`)
+      if (!this.musicLoads[key]) this.musicLoads[key] = fetch(`${AUDIO_BASE}audio/${track.file}`)
         .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.arrayBuffer(); })
         .then(data => this.context.decodeAudioData(data)).then(buffer => {
           this.musicBuffers[key] = buffer; this.startMusic();
@@ -72,15 +74,21 @@ export class GameAudio {
     }
     const source = this.context.createBufferSource();
     source.buffer = this.musicBuffers[key]; source.loop = true;
-    source.loopStart = 0; source.loopEnd = Math.min(166, source.buffer.duration);
+    source.loopEnd=Math.min(track.loopEnd,source.buffer.duration);
+    source.loopStart=Math.min(track.loopStart,Math.max(0,source.loopEnd-.001));
     source.connect(this.musicGain);
-    source.start(0, this.musicOffset % source.loopEnd);
+    source.start(0,this.loopPosition(this.musicOffset,source));
     this.musicStartedAt = this.context.currentTime; this.musicSource = source;
   }
   stopStageMusic() {
     if (!this.musicSource) return;
-    this.musicOffset = (this.musicOffset + this.context.currentTime - this.musicStartedAt) % this.musicSource.loopEnd;
+    this.musicOffset=this.loopPosition(this.musicOffset+this.context.currentTime-this.musicStartedAt,this.musicSource);
     this.musicSource.stop(); this.musicSource.disconnect(); this.musicSource = null;
+  }
+  loopPosition(time,source) {
+    if(time<source.loopEnd)return Math.max(0,time);
+    const span=source.loopEnd-source.loopStart;
+    return span>0?source.loopStart+(time-source.loopStart)%span:0;
   }
   dispose() {
     this.disposed = true; this.menuTrack.pause(); this.stopStageMusic(); this.context?.close();
